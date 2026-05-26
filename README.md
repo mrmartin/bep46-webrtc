@@ -1,6 +1,6 @@
 # bep46-webrtc
 
-Updatable torrents, in a single HTML file.
+Updatable torrents, in a single HTML file. [LIVE DEMO](https://htmlpreview.github.io/?https://github.com/mrmartin/bep46-webrtc/blob/main/bep46-webrtc.html)
 
 BitTorrent is permanent by design: a torrent is identified by the hash of its
 own contents, so changing one byte makes a different torrent with a different
