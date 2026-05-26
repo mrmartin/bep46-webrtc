@@ -3,13 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BEP-46 / WebRTC — mutable torrents in the browser</title>
+<title>YOU ARE THE INTERNET — bep46 / WebRTC</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl.min.js"></script>
-<!-- if this CDN path ever 404s, swap to any host serving WebTorrent's browser bundle -->
-<script src="https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.js"></script>
+<!-- WebTorrent: pin to 1.9.7 — the last UMD build. From 2.0.0 the package is
+     "type": "module" / pure ESM, so a classic <script> tag silently fails to
+     define the WebTorrent global. The fallback below tries unpkg if jsdelivr
+     ever blocks or breaks this path. -->
+<script src="https://cdn.jsdelivr.net/npm/webtorrent@1.9.7/webtorrent.min.js"></script>
+<script>
+if (typeof WebTorrent === 'undefined') {
+  var s = document.createElement('script');
+  s.src = 'https://unpkg.com/webtorrent@1.9.7/webtorrent.min.js';
+  document.head.appendChild(s);
+}
+</script>
 <style>
   :root{
     --bg:#0c0d10; --panel:#131419; --line:#23252e; --ink:#e9e6dd;
@@ -19,25 +29,8 @@
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--ink);
     font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:14px;line-height:1.55}
-  body{
-    background-image:
-      radial-gradient(circle at 12% -10%, rgba(240,161,60,.08), transparent 45%),
-      radial-gradient(circle at 100% 0%, rgba(111,168,216,.06), transparent 40%);
-    min-height:100vh;padding:34px 20px 80px}
-  .wrap{max-width:880px;margin:0 auto}
-  header{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:26px}
-  h1{font-weight:700;font-size:23px;letter-spacing:.5px;margin:0 0 6px}
-  h1 .slash{color:var(--amber)}
-  .tag{color:var(--dim);font-size:12.5px;max-width:640px}
-  .tag b{color:var(--ink);font-weight:500}
-  section{background:var(--panel);border:1px solid var(--line);border-radius:6px;
-    padding:18px 18px 20px;margin-bottom:18px;position:relative}
-  .step{position:absolute;top:-11px;left:14px;background:var(--amber);color:#171206;
-    font-weight:700;font-size:11px;padding:2px 9px;border-radius:3px;letter-spacing:.5px}
-  h2{font-size:13px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;
-    color:var(--amber);margin:4px 0 14px}
-  label{display:block;color:var(--dim);font-size:11px;letter-spacing:.6px;
-    text-transform:uppercase;margin:12px 0 5px}
+  body{min-height:100vh;display:flex;flex-direction:column}
+  a{color:var(--blue)}
   button{font-family:inherit;font-size:13px;background:var(--amber-d);color:var(--amber);
     border:1px solid #5a4520;padding:8px 15px;border-radius:4px;cursor:pointer;
     font-weight:500;transition:.13s}
@@ -45,143 +38,254 @@
   button:disabled{opacity:.35;cursor:not-allowed}
   button.ghost{background:transparent;border-color:var(--line);color:var(--dim)}
   button.ghost:hover:not(:disabled){color:var(--ink);border-color:var(--dim);background:transparent}
-  input[type=text]{width:100%;font-family:inherit;font-size:12.5px;background:#0a0b0e;
-    color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:9px 10px}
-  input[type=text]:focus{outline:none;border-color:var(--amber)}
+  button.big{font-size:15px;padding:14px 18px}
+  input[type=text],textarea{width:100%;font-family:inherit;font-size:12.5px;background:#0a0b0e;
+    color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:9px 10px;resize:vertical}
+  input[type=text]:focus,textarea:focus{outline:none;border-color:var(--amber)}
   input[type=file]{font-family:inherit;font-size:12px;color:var(--dim)}
-  .row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+  label{display:block;color:var(--dim);font-size:11px;letter-spacing:.6px;
+    text-transform:uppercase;margin:12px 0 5px}
   .mono{font-size:11.5px;word-break:break-all;background:#0a0b0e;border:1px solid var(--line);
     border-radius:4px;padding:8px 10px;color:var(--blue)}
-  .mono.key{color:var(--amber)}
+  .mono.key{color:var(--amber)} .mono.sec{color:var(--red)}
   .hint{color:var(--dim);font-size:11.5px;margin-top:8px}
   .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;
-    border:1px solid var(--line);color:var(--dim);margin-right:6px}
+    border:1px solid var(--line);color:var(--dim);margin-right:6px;white-space:nowrap}
   .pill.on{color:var(--green);border-color:#2c4a2b}
   .pill.warn{color:var(--amber);border-color:#5a4520}
+  .pill.bad{color:var(--red);border-color:#5a2424}
+
+  /* ─── top control bar (always present) ─── */
+  #bar{position:sticky;top:0;z-index:50;background:#0a0b0e;border-bottom:1px solid var(--line);
+    padding:9px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  #bar .brand{font-weight:700;color:var(--amber);letter-spacing:.5px;cursor:pointer;
+    text-decoration:none;font-size:13px}
+  #bar .brand .slash{color:var(--ink)}
+  #bar .spacer{flex:1}
+  #bar .ctx{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11.5px;color:var(--dim)}
+  #bar .ctx .addr{color:var(--amber);background:#15110a;border:1px solid #3a2c14;
+    padding:2px 8px;border-radius:3px;cursor:pointer;font-size:11px}
+  #bar .ver{color:var(--green);font-weight:700}
+
+  /* ─── views ─── */
+  .view{flex:1;display:none}
+  .view.active{display:block}
+  .wrap{max-width:880px;margin:0 auto;padding:32px 20px 60px}
+  #view-visit.active{display:flex;flex-direction:column}
+  #view-visit .pre{flex:1;padding:32px 20px}
+  #view-visit .pre .wrap{max-width:640px}
+
+  /* home */
+  h1{font-weight:700;font-size:34px;letter-spacing:1px;margin:0 0 8px;text-align:center}
+  h1 .slash{color:var(--amber)}
+  .sub{color:var(--dim);text-align:center;margin-bottom:38px;font-size:13px}
+  .options{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:680px){.options{grid-template-columns:1fr}}
+  .opt{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+    padding:22px 18px;cursor:pointer;transition:.15s;text-align:left}
+  .opt:hover{border-color:var(--amber);background:#181410}
+  .opt h3{margin:0 0 6px;color:var(--amber);font-size:14px;letter-spacing:.8px;
+    text-transform:uppercase}
+  .opt p{margin:0;color:var(--dim);font-size:12px;line-height:1.6}
+
+  /* generic section */
+  section{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+    padding:20px;margin-bottom:18px}
+  section h2{font-size:13px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;
+    color:var(--amber);margin:0 0 14px}
+  .row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+  .row.tight{gap:6px}
+  .crumb{font-size:11.5px;color:var(--dim);margin-bottom:18px}
+  .crumb a{color:var(--dim);text-decoration:none;border-bottom:1px dotted var(--dim)}
+  .crumb a:hover{color:var(--ink);border-color:var(--ink)}
+
+  /* iframe page viewer */
+  #frameWrap{flex:1;display:none;background:#fff;position:relative}
+  #frameWrap.active{display:block}
+  #frame{width:100%;height:100%;border:0;background:#fff;display:block}
+  #frameWait{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    background:rgba(12,13,16,.92);color:var(--dim);font-size:12px}
+  #frameWait.hide{display:none}
+
+  /* log */
+  #log{background:#070809;border:1px solid var(--line);border-radius:6px;padding:10px 13px;
+    height:160px;overflow:auto;font-size:11px;line-height:1.65;margin-top:12px}
+  #log .t{color:var(--dim)} #log .e{color:var(--red)} #log .ok{color:var(--green)} #log .w{color:var(--amber)}
+  details summary{cursor:pointer;color:var(--dim);font-size:11.5px;letter-spacing:.6px;
+    text-transform:uppercase}
+  details[open] summary{color:var(--amber)}
+
   .files{margin-top:10px;border:1px solid var(--line);border-radius:4px;overflow:hidden}
   .files div{display:flex;justify-content:space-between;padding:7px 10px;font-size:12px;
     border-bottom:1px solid var(--line)}
   .files div:last-child{border-bottom:none}
-  .files a{color:var(--green);text-decoration:none}
-  .files a:hover{text-decoration:underline}
-  .ver{font-size:30px;font-weight:700;color:var(--green);line-height:1}
-  .ver.none{color:var(--dim);font-size:16px;font-weight:400}
-  #log{background:#070809;border:1px solid var(--line);border-radius:6px;padding:12px 14px;
-    height:170px;overflow:auto;font-size:11.5px;line-height:1.65}
-  #log .t{color:var(--dim)}
-  #log .e{color:var(--red)} #log .ok{color:var(--green)} #log .w{color:var(--amber)}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-  @media(max-width:620px){.grid2{grid-template-columns:1fr}}
-  a.lnk{color:var(--blue)}
-  .reveal{cursor:pointer;color:var(--dim);font-size:11px;text-decoration:underline}
+  .reveal{cursor:pointer;color:var(--dim);font-size:11px;text-decoration:underline;margin-left:6px}
+  .saved{margin-top:12px;font-size:11.5px;color:var(--dim)}
+  .saved a{color:var(--blue);text-decoration:none;cursor:pointer}
+  .saved a:hover{text-decoration:underline}
+  .stack-area{display:flex;flex-direction:column;gap:6px}
 </style>
 </head>
 <body>
-<div class="wrap">
-<header>
-  <h1>BEP-46 <span class="slash">/</span> WebRTC</h1>
-  <div class="tag">Mutable torrents, entirely in the browser. The channel ID is
-  <b>sha1(publicKey)</b> — the same target BEP-46 uses in the DHT — but the signed pointer
-  is gossiped over a <b>WebRTC rendezvous swarm</b> instead of the mainline DHT.
-  Owner-only updates, ed25519-signed, sequence-numbered.</div>
-</header>
 
-<!-- ───────────── IDENTITY ───────────── -->
-<section>
-  <span class="step">1 · IDENTITY</span>
-  <h2>Your keypair = your mutable address</h2>
-  <div class="row">
-    <button id="gen">Generate keypair</button>
-    <button class="ghost" id="impBtn">Import secret</button>
-    <button class="ghost" id="expBtn" disabled>Export secret</button>
-  </div>
-  <div id="impWrap" style="display:none">
-    <label>Paste 128-hex secret key</label>
-    <div class="row">
-      <input type="text" id="impKey" placeholder="ed25519 secret key (hex)" style="flex:1;min-width:240px">
-      <button id="impGo">Load</button>
-    </div>
-  </div>
-  <label>Public key — share this as the address <span class="reveal" id="copyAddr">[copy bep46: URI]</span></label>
-  <div class="mono key" id="pub">— not generated —</div>
-  <label>Secret key <span class="reveal" id="secToggle">[reveal]</span></label>
-  <div class="mono" id="sec">••••••••••••••••••••••••••••••••</div>
-  <div class="hint">Keep the secret offline. Anyone holding it can publish updates to this address.</div>
-</section>
-
-<!-- ───────────── PUBLISH ───────────── -->
-<section>
-  <span class="step">2 · CREATE &amp; PUBLISH</span>
-  <h2>Seed content, then point your address at it</h2>
-  <label>Select file(s) to put in the torrent</label>
-  <div class="row">
-    <input type="file" id="files" multiple>
-    <button id="create" disabled>Create torrent</button>
-  </div>
-  <div class="hint">Publishing a new version is always two clicks: <b>Create torrent</b>
-  (seeds the chosen file), then <b>Publish new version</b>. Selecting a different file
-  re-arms Create — you must Create again before you can Publish it.</div>
-  <div id="contentBox" style="display:none">
-    <label>Content infohash (the current version)</label>
-    <div class="mono" id="contentIH"></div>
-    <div class="row" style="margin-top:12px">
-      <button id="publish" disabled>Publish new version</button>
-      <span class="pill" id="seqPill">seq —</span>
-      <span class="pill" id="seedPill">seeding 0 peers</span>
-    </div>
-    <div class="hint">Each publish increments the sequence number, re-signs, and gossips the
-    new pointer. A heartbeat keeps re-broadcasting it every 3 s, so a follower that joins
-    <i>after</i> a publish still syncs. Keep this tab open to keep seeding.</div>
-  </div>
-</section>
-
-<!-- ───────────── FOLLOW ───────────── -->
-<section>
-  <span class="step">3 · FOLLOW &amp; AUTO-UPDATE</span>
-  <h2>Track an address — content reloads when the owner publishes</h2>
-  <label>Address to follow (public key hex, or bep46:&lt;hex&gt;)</label>
-  <div class="row">
-    <input type="text" id="followKey" placeholder="ed25519 public key" style="flex:1;min-width:240px">
-    <button id="follow">Follow</button>
-  </div>
-  <div id="followBox" style="display:none;margin-top:14px">
-    <div class="grid2">
-      <div>
-        <label>Current version</label>
-        <div class="ver none" id="ver">waiting…</div>
-      </div>
-      <div>
-        <label>Status</label>
-        <div>
-          <span class="pill" id="chPill">channel 0 peers</span>
-          <span class="pill" id="dlPill">idle</span>
-        </div>
-      </div>
-    </div>
-    <label style="margin-top:14px">Pointer infohash</label>
-    <div class="mono" id="followIH">—</div>
-    <div class="files" id="followFiles" style="display:none"></div>
-  </div>
-  <div class="hint">Test it with two browser tabs (or two devices): publish in one, follow the
-  same address in the other. Following your own address in the same tab is blocked — one
-  WebTorrent client can't join a swarm twice.</div>
-</section>
-
-<section style="padding-bottom:14px">
-  <h2 style="margin-bottom:10px">Event log</h2>
-  <div id="log"></div>
-</section>
-
-<div class="tag" style="margin-top:6px">
-  Built on <a class="lnk" href="https://webtorrent.io" target="_blank" rel="noopener">WebTorrent</a>
-  (WebRTC transport) + <a class="lnk" href="https://tweetnacl.js.org" target="_blank" rel="noopener">TweetNaCl</a>
-  (ed25519). Spec reference: <a class="lnk" href="https://bittorrent.org/beps/bep_0046.html" target="_blank" rel="noopener">BEP-46</a>.
+<!-- ──────────────── persistent top control bar ──────────────── -->
+<div id="bar">
+  <a class="brand" href="#/"><span>YOU ARE THE </span><span class="slash">INTERNET</span></a>
+  <div class="spacer"></div>
+  <div class="ctx" id="ctx"></div>
 </div>
+
+<!-- ──────────────── HOME ──────────────── -->
+<div class="view active" id="view-home">
+  <div class="wrap">
+    <h1>YOU ARE THE <span class="slash">INTERNET</span></h1>
+    <div class="sub">Serverless web pages. Addressed by a key, served by whoever has a tab open.</div>
+    <div class="options">
+      <div class="opt" data-go="#/create">
+        <h3>Create new content</h3>
+        <p>Upload a single HTML file. Get a public address you can share and a secret key that lets you publish updates.</p>
+      </div>
+      <div class="opt" data-go="#/visit">
+        <h3>Visit a page</h3>
+        <p>Paste a public address. The latest version is fetched from the swarm and rendered here. You silently re-seed it so the page survives the author going offline.</p>
+      </div>
+      <div class="opt" data-go="#/update">
+        <h3>Update your content</h3>
+        <p>Enter your address and secret, pick a new HTML file. The new version is signed and gossiped across the network.</p>
+      </div>
+    </div>
+
+    <div class="saved" id="savedList"></div>
+  </div>
+</div>
+
+<!-- ──────────────── CREATE ──────────────── -->
+<div class="view" id="view-create">
+  <div class="wrap">
+    <div class="crumb"><a href="#/">← home</a> &nbsp;/&nbsp; create new content</div>
+    <section>
+      <h2>Step 1 · Pick your HTML</h2>
+      <label>Single HTML file (everything inline — no external assets)</label>
+      <div class="row">
+        <input type="file" id="cFile" accept=".html,.htm,text/html">
+        <button id="cMake">Create &amp; publish</button>
+      </div>
+      <div class="hint">A new ed25519 keypair is generated for you. The file is seeded over WebRTC and the
+        signed pointer is gossiped to the swarm.</div>
+    </section>
+    <section id="cResult" style="display:none">
+      <h2>Step 2 · Save these — they are your page</h2>
+      <label>Public address — share this <span class="reveal" id="cCopyAddr">[copy bep46: URI]</span> <span class="reveal" id="cOpen">[open the page]</span></label>
+      <div class="mono key" id="cPub">—</div>
+      <label>Secret key — KEEP THIS SAFE <span class="reveal" id="cCopySec">[copy]</span> <span class="reveal" id="cDlSec">[download .key file]</span></label>
+      <div class="mono sec" id="cSec">—</div>
+      <div class="hint" style="color:var(--red)">Anyone holding this secret can publish new versions. There is no recovery — if you lose it the address is read-only forever.</div>
+      <label style="margin-top:14px">Status</label>
+      <div class="row tight">
+        <span class="pill" id="cSeqPill">seq —</span>
+        <span class="pill" id="cChPill">channel 0 peers</span>
+        <span class="pill" id="cSeedPill">seeding 0 peers</span>
+        <span class="pill" id="cIhPill">infohash …</span>
+      </div>
+      <div class="hint">Keep this tab open — you are the only seed until someone else visits. Once visitors arrive, they re-seed automatically.</div>
+    </section>
+  </div>
+</div>
+
+<!-- ──────────────── VISIT ──────────────── -->
+<div class="view" id="view-visit">
+  <!-- pre-load form -->
+  <div class="pre" id="visitForm">
+    <div class="wrap">
+      <div class="crumb"><a href="#/">← home</a> &nbsp;/&nbsp; visit a page</div>
+      <section>
+        <h2>Visit</h2>
+        <label>Public address (64-hex, with or without <code>bep46:</code> prefix)</label>
+        <div class="row">
+          <input type="text" id="vAddr" placeholder="bep46:abc123… or just the 64 hex chars" style="flex:1;min-width:240px">
+          <button id="vGo">Visit</button>
+        </div>
+        <div class="hint">Each page you visit is cached locally — you become a seeder of the latest version you saw, so the page stays reachable even if the author disconnects.</div>
+      </section>
+    </div>
+  </div>
+  <!-- iframe + waiting overlay -->
+  <div id="frameWrap">
+    <iframe id="frame" sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals" referrerpolicy="no-referrer"></iframe>
+    <div id="frameWait" class="hide">looking for peers…</div>
+  </div>
+</div>
+
+<!-- ──────────────── UPDATE ──────────────── -->
+<div class="view" id="view-update">
+  <div class="wrap">
+    <div class="crumb"><a href="#/">← home</a> &nbsp;/&nbsp; update your content</div>
+    <section>
+      <h2>Push a new version</h2>
+      <label>Public address (your page)</label>
+      <input type="text" id="uAddr" placeholder="64-hex public key">
+      <label>Secret key (128-hex) <span class="reveal" id="uSecPaste">[paste from .key file]</span></label>
+      <input type="text" id="uSec" placeholder="128-hex ed25519 secret key">
+      <input type="file" id="uSecFile" accept=".key,.txt,text/plain" style="display:none">
+      <label>New HTML file</label>
+      <input type="file" id="uFile" accept=".html,.htm,text/html">
+      <div class="row" style="margin-top:14px">
+        <button id="uGo">Sign &amp; publish new version</button>
+        <span class="pill" id="uSeqPill">current seq —</span>
+        <span class="pill" id="uChPill">channel 0 peers</span>
+      </div>
+      <div class="hint">The keypair is reconstructed from your secret. The new file is seeded, then a signed
+        pointer with <code>seq+1</code> is gossiped — followers refresh on their next heartbeat.</div>
+    </section>
+    <section id="uResult" style="display:none">
+      <h2>Published</h2>
+      <div class="mono" id="uIH"></div>
+      <div class="row tight" style="margin-top:10px">
+        <span class="pill on" id="uNewSeqPill">published</span>
+        <span class="pill" id="uSeedPill">seeding 0 peers</span>
+        <button class="ghost" id="uOpen">Open the page</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ──────────────── log (always reachable) ──────────────── -->
+<div class="wrap" style="padding-top:0">
+  <details>
+    <summary>Event log</summary>
+    <div id="log"></div>
+  </details>
 </div>
 
 <script>
 "use strict";
-/* ───────────────────────── helpers ───────────────────────── */
+/* ============================================================
+ * YOU ARE THE INTERNET
+ *   serverless HTML pages on top of bep46-webrtc
+ *   - create  → seed a single HTML, get pub/sec keys
+ *   - visit   → resolve pub key, render HTML inline, re-seed
+ *   - update  → sign & publish a new version
+ * ============================================================ */
+
+(async function bootWhenReady(){
+  /* Wait until WebTorrent (UMD) and tweetnacl have both registered their
+     globals. The fallback <script> tag in <head> may still be loading. */
+  const deadline = Date.now() + 15000;
+  while ((typeof WebTorrent === 'undefined' || typeof nacl === 'undefined')
+         && Date.now() < deadline){
+    await new Promise(r => setTimeout(r, 80));
+  }
+  if (typeof WebTorrent === 'undefined' || typeof nacl === 'undefined'){
+    document.body.insertAdjacentHTML('afterbegin',
+      '<div style="background:#5a2424;color:#fff;padding:14px 18px;'
+      + 'font-family:monospace;font-size:13px;border-bottom:1px solid #e2645b">'
+      + 'Could not load WebTorrent or TweetNaCl from CDN. '
+      + 'Check your network and refresh, or open from a host that allows jsdelivr/unpkg.'
+      + '</div>');
+    return;
+  }
+
+/* ───────────── shared helpers ───────────── */
 const $ = id => document.getElementById(id);
 const TRACKERS = [
   'wss://tracker.openwebtorrent.com',
@@ -191,15 +295,17 @@ const enc = new TextEncoder(), dec = new TextDecoder();
 const toHex = u => [...u].map(b=>b.toString(16).padStart(2,'0')).join('');
 const fromHex = h => { const u=new Uint8Array(h.length/2);
   for(let i=0;i<u.length;i++) u[i]=parseInt(h.substr(i*2,2),16); return u; };
+const short = h => h ? h.slice(0,10)+'…'+h.slice(-6) : '—';
 
 function log(msg,cls){
-  const el=$('log'); const t=new Date().toTimeString().slice(0,8);
+  const el=$('log'); if(!el) return;
+  const t=new Date().toTimeString().slice(0,8);
   const line=document.createElement('div');
   line.innerHTML=`<span class="t">${t}</span> <span class="${cls||''}">${msg}</span>`;
   el.appendChild(line); el.scrollTop=el.scrollHeight;
 }
 
-/* compact SHA-1 (bytes -> hex) so the file works on file:// without crypto.subtle */
+/* compact SHA-1 (bytes -> hex) — works on file:// without crypto.subtle */
 function sha1hex(bytes){
   function rol(n,s){return (n<<s)|(n>>>(32-s));}
   const ml=bytes.length*8;
@@ -228,7 +334,7 @@ function sha1hex(bytes){
   return [h0,h1,h2,h3,h4].map(x=>(x>>>0).toString(16).padStart(8,'0')).join('');
 }
 
-/* the signed message: 8-byte big-endian seq || 20-byte infohash  */
+/* signed message: 8-byte big-endian seq || 20-byte infohash */
 function pointerMessage(seq, ihHex){
   const m=new Uint8Array(28); const dv=new DataView(m.buffer);
   dv.setBigUint64(0, BigInt(seq), false);
@@ -237,7 +343,7 @@ function pointerMessage(seq, ihHex){
 }
 function signRecord(seq, ihHex, pubHex, secKey){
   const sig = nacl.sign.detached(pointerMessage(seq,ihHex), secKey);
-  return { k:pubHex, seq, ih:ihHex, sig:toHex(sig) };           // BEP-46 shape: v.ih
+  return { k:pubHex, seq, ih:ihHex, sig:toHex(sig) };
 }
 function verifyRecord(rec){
   if(!rec||typeof rec.seq!=='number'||!/^[0-9a-f]{40}$/.test(rec.ih||'')) return false;
@@ -247,33 +353,61 @@ function verifyRecord(rec){
   catch(e){ return false; }
 }
 
-/* ───────────────────────── state ───────────────────────── */
+/* ───────────── IndexedDB cache: pages we have seen ─────────────
+   schema: pages keyed by pubHex, holds {pubHex, seq, ih, sig, name,
+   html (string), torrentFile (Uint8Array or null), seen (timestamp)}.
+   torrentFile lets us re-seed the SAME infohash deterministically on
+   page reopen — without it we can only re-fetch, not re-seed. */
+const DB_NAME='bep46-pages', DB_VER=1;
+let dbp = new Promise((res,rej)=>{
+  const r=indexedDB.open(DB_NAME,DB_VER);
+  r.onupgradeneeded=()=>{ r.result.createObjectStore('pages',{keyPath:'pubHex'}); };
+  r.onsuccess=()=>res(r.result);
+  r.onerror=()=>rej(r.error);
+});
+async function dbPut(rec){
+  const db=await dbp;
+  return new Promise((res,rej)=>{
+    const tx=db.transaction('pages','readwrite');
+    tx.objectStore('pages').put(rec);
+    tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error);
+  });
+}
+async function dbGet(pubHex){
+  const db=await dbp;
+  return new Promise((res,rej)=>{
+    const tx=db.transaction('pages','readonly');
+    const r=tx.objectStore('pages').get(pubHex);
+    r.onsuccess=()=>res(r.result||null); r.onerror=()=>rej(r.error);
+  });
+}
+async function dbAll(){
+  const db=await dbp;
+  return new Promise((res,rej)=>{
+    const tx=db.transaction('pages','readonly');
+    const r=tx.objectStore('pages').getAll();
+    r.onsuccess=()=>res(r.result||[]); r.onerror=()=>rej(r.error);
+  });
+}
+
+/* ───────────── WebTorrent client + Channel ───────────── */
 let client = new WebTorrent();
 client.on('error', e => log('client: '+e.message,'e'));
 log('WebTorrent client up — peerId '+client.peerId.slice(0,8),'ok');
 
-let kp = null;            // {publicKey, secretKey, pubHex}
-let contentTorrent = null;
-let pubChannel = null;    // Channel — owner side
-let followChannel = null; // Channel — consumer side
-let seedInterval = null;  // seed-status poll (cleared on re-create)
-
-/* ─────────── Channel: a WebRTC rendezvous swarm at sha1(pubkey) ─────────── */
-/* every peer interested in a public key joins a WebTorrent swarm whose       */
-/* infohash = sha1(pubkey); a wire extension gossips the signed pointer.      */
 class Channel {
-  constructor(pubHex, onRecord, onPeers){
+  constructor(pubHex, onRecord, onPeers, initialBest){
     this.pubHex=pubHex; this.onRecord=onRecord; this.onPeers=onPeers;
-    this.best=null;                 // best verified record we hold
+    /* initialBest seeds our local 'best' from a previously-cached record so
+       we never gossip a seq lower than one we already know is valid — avoids
+       a fresh tab announcing seq=1 over an existing seq=N network. */
+    this.best = initialBest && verifyRecord(initialBest) ? initialBest : null;
     this.wires=new Set();
     this.channelId=sha1hex(fromHex(pubHex));
-    log('channel id = '+this.channelId.slice(0,16)+'… for key '+pubHex.slice(0,12)+'…');
+    log('channel id = '+this.channelId.slice(0,12)+'… for key '+pubHex.slice(0,10)+'…');
     this.torrent=client.add(this.channelId,{announce:TRACKERS,name:'bep46-channel'});
     this.torrent.on('wire', w=>this._attach(w));
     this.torrent.on('warning',()=>{});
-    /* BEP-44/46: periodically re-announce the pointer so a follower that joins
-       AFTER a publish still receives the current version (idempotent — _ingest
-       drops anything that isn't strictly newer). */
     this._beat=setInterval(()=>{ if(this.best) this.broadcast(this.best); },3000);
   }
   _attach(wire){
@@ -282,24 +416,17 @@ class Channel {
     bep46.prototype.name='bep46';
     bep46.prototype.onExtendedHandshake=function(){
       self.wires.add(this.w); this.w._bep46=this; self._peers();
-      if(self.best) this.send(self.best);            // bring new peer up to date
+      if(self.best) this.send(self.best);
     };
     bep46.prototype.onMessage=function(buf){
-      /* wire.extended() bencodes a non-Buffer payload as a byte string
-         "<len>:<json>" — strip that prefix before parsing. A real record is
-         JSON and starts with '{', never a digit, so ^\d+: only ever matches
-         the bencode wrapper. */
       let txt; try{ txt=dec.decode(buf); }catch(e){ return; }
       const m=txt.match(/^(\d+):/);
       if(m) txt=txt.slice(m[1].length+1);
       let rec; try{ rec=JSON.parse(txt); }
-      catch(e){ log('dropped malformed pointer message','w'); return; }
+      catch(e){ log('dropped malformed pointer','w'); return; }
       self._ingest(rec);
     };
     bep46.prototype.send=function(rec){
-      /* pass a STRING, not a Uint8Array: bittorrent-protocol only transmits a
-         payload untouched when Buffer.isBuffer() is true, otherwise it bencodes
-         it. A Uint8Array is not a Buffer, so it would be silently mangled. */
       try{ this.w.extended('bep46', JSON.stringify(rec)); }
       catch(e){ log('send failed: '+e.message,'w'); }
     };
@@ -308,166 +435,549 @@ class Channel {
   }
   _peers(){ if(this.onPeers) this.onPeers(this.wires.size); }
   _ingest(rec){
-    if(rec.k!==this.pubHex) return;                  // not our channel
+    if(rec.k!==this.pubHex) return;
     if(!verifyRecord(rec)){ log('rejected pointer: bad signature','w'); return; }
-    if(this.best && rec.seq<=this.best.seq) return;  // rollback protection / dedupe
+    if(this.best && rec.seq<=this.best.seq) return;
     this.best=rec;
-    log('accepted pointer seq '+rec.seq+' → '+rec.ih.slice(0,12)+'…','ok');
-    this.broadcast(rec);                             // gossip onward
+    log('accepted pointer seq '+rec.seq+' → '+rec.ih.slice(0,10)+'…','ok');
+    this.broadcast(rec);
     if(this.onRecord) this.onRecord(rec);
   }
-  /* called locally by the owner when publishing */
   publish(rec){ this._ingest(rec); }
   broadcast(rec){ this.wires.forEach(w=> w._bep46 && w._bep46.send(rec)); }
   destroy(){ clearInterval(this._beat); try{ client.remove(this.channelId); }catch(e){} }
 }
 
-/* ───────────────────────── 1 · identity ───────────────────────── */
-function setKeypair(pair){
-  kp={ publicKey:pair.publicKey, secretKey:pair.secretKey, pubHex:toHex(pair.publicKey) };
-  $('pub').textContent=kp.pubHex;
-  $('sec').dataset.val=toHex(pair.secretKey);
-  $('sec').textContent='••••••••••••••••••••••••••••••••';
-  $('secToggle').textContent='[reveal]';
-  $('expBtn').disabled=false;
-  $('create').disabled=$('files').files.length===0;   // armable once a file is chosen
-  log('identity ready — address '+kp.pubHex.slice(0,16)+'…','ok');
-  /* owner joins its own channel so followers can find it */
-  if(pubChannel) pubChannel.destroy();
-  pubChannel=new Channel(kp.pubHex, r=>{ $('seqPill').textContent='seq '+r.seq; },
-                         ()=>{});
+/* ───────────── per-address active state ─────────────
+   one entry per pubHex we care about — owner or visitor. Holds the
+   channel, the current content torrent, and (where known) the secret
+   key. Keeping the entry alive after a visit is exactly what makes us
+   a seeder of the last version we saw. */
+const active = new Map();    // pubHex -> {channel, content, secretKey?, latestRec, html?}
+function ensureActive(pubHex){
+  if(active.has(pubHex)) return active.get(pubHex);
+  const ent={ pubHex, channel:null, content:null, secretKey:null, latestRec:null, html:null };
+  active.set(pubHex,ent);
+  return ent;
 }
-$('gen').onclick=()=>setKeypair(nacl.sign.keyPair());
-$('impBtn').onclick=()=>{ const w=$('impWrap'); w.style.display=w.style.display==='none'?'block':'none'; };
-$('impGo').onclick=()=>{
-  const h=$('impKey').value.trim().toLowerCase();
-  if(!/^[0-9a-f]{128}$/.test(h)){ log('import: need 128 hex chars','e'); return; }
-  try{ setKeypair(nacl.sign.keyPair.fromSecretKey(fromHex(h)));
-       $('impWrap').style.display='none'; }
-  catch(e){ log('import failed: '+e.message,'e'); }
-};
-$('secToggle').onclick=()=>{
-  const el=$('sec'); if(!el.dataset.val) return;
-  if(el.textContent[0]==='•'){ el.textContent=el.dataset.val; $('secToggle').textContent='[hide]'; }
-  else{ el.textContent='••••••••••••••••••••••••••••••••'; $('secToggle').textContent='[reveal]'; }
-};
-$('copyAddr').onclick=()=>{
-  if(!kp) return;
-  navigator.clipboard.writeText('bep46:'+kp.pubHex)
-    .then(()=>log('copied bep46: URI to clipboard','ok'))
-    .catch(()=>log('clipboard blocked — select the field manually','w'));
-};
-$('expBtn').onclick=()=>{
-  if(!kp) return;
-  const blob=new Blob([toHex(kp.secretKey)],{type:'text/plain'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob); a.download='bep46-secret.key'; a.click();
-  log('secret key exported to file','w');
-};
 
-/* ───────────────────────── 2 · create & publish ───────────────────────── */
-/* picking new file(s) re-arms Create and locks Publish until the new torrent
-   actually exists — prevents publishing a new seq that still points at the
-   previously-seeded infohash. */
-$('files').onchange=()=>{
-  if(!$('files').files.length) return;
-  if(!kp){ log('select made — generate a keypair, then click Create torrent','w'); return; }
-  $('create').disabled=false;
-  $('publish').disabled=true;
-  log('new file(s) selected — click Create torrent to seed them','w');
-};
-
-$('create').onclick=()=>{
-  const fl=$('files').files;
-  if(!fl.length){ log('select at least one file','e'); return; }
-  if(!kp){ log('generate a keypair first','e'); return; }
-  $('create').disabled=true;
-  log('creating torrent from '+fl.length+' file(s)…');
-  client.seed(fl,{announce:TRACKERS},torrent=>{
-    contentTorrent=torrent;
-    $('contentBox').style.display='block';
-    $('contentIH').textContent=torrent.infoHash;
-    $('publish').disabled=false;
-    log('seeding content infohash '+torrent.infoHash.slice(0,16)+'…','ok');
-    if(seedInterval) clearInterval(seedInterval);    // don't leak intervals on re-create
-    const upd=()=>{ $('seedPill').textContent='seeding '+torrent.numPeers+' peers'; };
-    torrent.on('wire',upd); torrent.on('peer',upd);
-    seedInterval=setInterval(upd,2000);
+/* read an html file into a string (utf-8); used by create + update */
+function readFileAsText(f){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=()=>res(r.result);
+    r.onerror=()=>rej(r.error);
+    r.readAsText(f,'utf-8');
   });
-};
-
-$('publish').onclick=()=>{
-  if(!contentTorrent||!kp||!pubChannel) return;
-  /* refuse to mint a new seq for content that is already the current pointer —
-     a new version requires a genuinely different infohash (i.e. Create again
-     with a different file). */
-  if(pubChannel.best && pubChannel.best.ih===contentTorrent.infoHash){
-    log('this exact content is already published as seq '+pubChannel.best.seq+
-        ' — select a new file and click Create torrent first','w');
-    return;
-  }
-  const seq=(pubChannel.best?pubChannel.best.seq:0)+1;
-  const rec=signRecord(seq, contentTorrent.infoHash, kp.pubHex, kp.secretKey);
-  pubChannel.publish(rec);                 // verifies, stores, gossips to followers
-  $('seqPill').textContent='seq '+seq;
-  log('PUBLISHED version seq '+seq+' → '+contentTorrent.infoHash.slice(0,12)+
-      '… to '+pubChannel.wires.size+' follower(s)','ok');
-};
-
-/* ───────────────────────── 3 · follow & auto-update ───────────────────────── */
-$('follow').onclick=()=>{
-  let h=$('followKey').value.trim().toLowerCase().replace(/^bep46:/,'');
-  if(!/^[0-9a-f]{64}$/.test(h)){ log('follow: need a 64-hex public key','e'); return; }
-  if(kp && h===kp.pubHex){
-    log('that is your own address — open a second tab to test following','w'); return;
-  }
-  if(followChannel) followChannel.destroy();
-  $('followBox').style.display='block';
-  $('ver').className='ver none'; $('ver').textContent='waiting…';
-  log('following '+h.slice(0,16)+'…');
-  followChannel=new Channel(h, onPointer, n=>{
-    $('chPill').textContent='channel '+n+' peers';
-  });
-};
-let followContent=null;
-function onPointer(rec){
-  $('ver').className='ver'; $('ver').textContent='v'+rec.seq;
-  $('followIH').textContent=rec.ih;
-  if(followContent && followContent.infoHash===rec.ih){
-    log('v'+rec.seq+' points at the same content as before — nothing to re-download','w');
-    return;
-  }
-  if(followContent){ try{ client.remove(followContent.infoHash); }catch(e){} }
-  $('dlPill').textContent='fetching…'; $('dlPill').className='pill warn';
-  $('followFiles').style.display='none'; $('followFiles').innerHTML='';
-  log('loading content for v'+rec.seq+' — '+rec.ih.slice(0,12)+'…');
-  followContent=client.add(rec.ih,{announce:TRACKERS},torrent=>{
-    log('metadata received for v'+rec.seq+' ('+torrent.files.length+' files)','ok');
-    $('dlPill').textContent='ready'; $('dlPill').className='pill on';
-    renderFiles(torrent);
-  });
-  followContent.on('wire',()=>{ $('dlPill').textContent='fetching ('+followContent.numPeers+'p)'; });
 }
-function renderFiles(torrent){
-  const box=$('followFiles'); box.innerHTML=''; box.style.display='block';
-  torrent.files.forEach(file=>{
-    const row=document.createElement('div');
-    const kb=(file.length/1024).toFixed(1)+' KB';
-    row.innerHTML=`<span>${file.name}</span><span><span style="color:var(--dim)">${kb}</span>
-      &nbsp; <a href="#">download</a></span>`;
-    const a=row.querySelector('a');
-    a.onclick=ev=>{
-      ev.preventDefault(); a.textContent='…';
-      const done=url=>{ a.textContent='download'; a.href=url; a.download=file.name;
-        const t=document.createElement('a'); t.href=url; t.download=file.name; t.click(); };
-      if(file.blob){ file.blob().then(b=>done(URL.createObjectURL(b)))
-                              .catch(e=>{a.textContent='err';log('blob: '+e.message,'e');}); }
-      else if(file.getBlobURL){ file.getBlobURL((e,url)=>{
-        if(e){a.textContent='err';log('blobURL: '+e.message,'e');return;} done(url); }); }
+function readFileAsBytes(f){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=()=>res(new Uint8Array(r.result));
+    r.onerror=()=>rej(r.error);
+    r.readAsArrayBuffer(f);
+  });
+}
+
+/* Seed a single HTML string. Returns the WebTorrent torrent object.
+   Filename is fixed to "index.html" so the same content always yields
+   the same infohash across browsers — important for re-seed determinism. */
+function seedHtml(htmlString, name){
+  const blob=new Blob([htmlString],{type:'text/html'});
+  const file=new File([blob], name||'index.html', {type:'text/html'});
+  return new Promise((res,rej)=>{
+    /* explicit name on the torrent options so the .torrent metadata is
+       byte-identical regardless of File constructor quirks */
+    client.seed([file],{announce:TRACKERS,name:name||'index.html'}, t=>res(t));
+    setTimeout(()=>rej(new Error('seed timeout')), 30000);
+  });
+}
+
+/* Pull an html file's content out of a torrent. Returns string. */
+function readTorrentHtml(torrent){
+  return new Promise((res,rej)=>{
+    if(!torrent.files || !torrent.files.length) return rej(new Error('no files in torrent'));
+    /* prefer the first .html file; fall back to first file overall */
+    const f = torrent.files.find(x=>/\.html?$/i.test(x.name)) || torrent.files[0];
+    const finish = blob => {
+      const r=new FileReader();
+      r.onload=()=>res(r.result);
+      r.onerror=()=>rej(r.error);
+      r.readAsText(blob,'utf-8');
     };
-    box.appendChild(row);
+    if(f.blob){ f.blob().then(finish).catch(rej); return; }
+    if(f.getBlob){ f.getBlob((e,b)=>e?rej(e):finish(b)); return; }
+    if(f.getBlobURL){
+      f.getBlobURL((e,url)=>{ if(e)return rej(e);
+        fetch(url).then(r=>r.blob()).then(finish).catch(rej); });
+      return;
+    }
+    rej(new Error('no blob accessor on file'));
   });
 }
+
+/* ───────────── routing ───────────── */
+function setView(name){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  const el=document.getElementById('view-'+name);
+  if(el) el.classList.add('active');
+}
+function navHome(){ setView('home'); refreshSavedList(); setCtx(''); }
+function navCreate(){ setView('create'); setCtx('creating'); }
+function navUpdate(){ setView('update'); setCtx('updating'); }
+function navVisit(pubHex){
+  setView('visit');
+  if(!pubHex){
+    $('visitForm').style.display='block';
+    $('frameWrap').classList.remove('active');
+    setCtx('visit');
+    return;
+  }
+  $('visitForm').style.display='none';
+  $('frameWrap').classList.add('active');
+  $('frameWait').classList.remove('hide');
+  $('frameWait').textContent='looking for peers…';
+  startVisit(pubHex);
+}
+function setCtx(kind, info){
+  const c=$('ctx'); c.innerHTML='';
+  if(!kind) return;
+  if(kind==='visit-active'){
+    const ent=info.ent;
+    const addr=document.createElement('span');
+    addr.className='addr'; addr.title='click to copy bep46: URI';
+    addr.textContent='bep46:'+ent.pubHex.slice(0,8)+'…'+ent.pubHex.slice(-4);
+    addr.onclick=()=>navigator.clipboard.writeText('bep46:'+ent.pubHex)
+      .then(()=>log('copied bep46: URI','ok')).catch(()=>{});
+    const v=document.createElement('span'); v.className='ver';
+    v.textContent = ent.latestRec ? ('v'+ent.latestRec.seq) : '…';
+    const ch=document.createElement('span'); ch.className='pill'; ch.id='ctxCh';
+    ch.textContent='channel — peers';
+    const dl=document.createElement('span'); dl.className='pill'; dl.id='ctxDl';
+    dl.textContent='—';
+    c.appendChild(addr); c.appendChild(v); c.appendChild(ch); c.appendChild(dl);
+  } else {
+    const s=document.createElement('span'); s.textContent=kind; c.appendChild(s);
+  }
+}
+
+window.addEventListener('hashchange', route);
+function route(){
+  const h=location.hash||'#/';
+  const m = h.match(/^#\/(visit)(?:\/([0-9a-fA-F]{64}))?\/?$/);
+  if(m){ navVisit(m[2]?m[2].toLowerCase():null); return; }
+  if(h==='#/create'){ navCreate(); return; }
+  if(h==='#/update'){ navUpdate(); return; }
+  navHome();
+}
+
+/* home tile clicks → hash change */
+document.querySelectorAll('#view-home .opt').forEach(el=>{
+  el.onclick=()=>{ location.hash=el.dataset.go; };
+});
+
+/* ───────────── CREATE ───────────── */
+$('cMake').onclick = async () => {
+  const f = $('cFile').files[0];
+  if(!f){ log('pick an HTML file first','e'); return; }
+  $('cMake').disabled=true;
+  log('creating new page from '+f.name+' ('+f.size+' bytes)…');
+  try{
+    const html = await readFileAsText(f);
+    const pair = nacl.sign.keyPair();
+    const pubHex = toHex(pair.publicKey);
+    const secHex = toHex(pair.secretKey);
+    const ent = ensureActive(pubHex);
+    ent.secretKey = pair.secretKey;
+    ent.html = html;
+
+    log('seeding html…');
+    const t = await seedHtml(html, 'index.html');
+    ent.content = t;
+    log('seeding content '+t.infoHash.slice(0,10)+'… ('+t.files.length+' file)','ok');
+
+    /* join the channel as the owner so visitors can find us.
+       Channel callbacks only update UI state — they must NOT write the
+       html to the DB, because this closure captures the create-time html
+       and would overwrite later-version caches with stale v1 bytes when
+       an update is published from this tab. Persistence happens at the
+       site that actually has the html (create/update/visit-fetch). */
+    ent.channel = new Channel(pubHex,
+      r=>{ ent.latestRec=r;
+           $('cSeqPill').textContent='seq '+r.seq; },
+      n=>{ $('cChPill').textContent='channel '+n+' peers'; });
+
+    /* publish v1 immediately */
+    const rec = signRecord(1, t.infoHash, pubHex, pair.secretKey);
+    ent.channel.publish(rec);
+
+    $('cResult').style.display='block';
+    $('cPub').textContent = pubHex;
+    $('cSec').textContent = secHex;
+    $('cIhPill').textContent = 'infohash '+t.infoHash.slice(0,10)+'…';
+    $('cSeqPill').textContent = 'seq 1';
+
+    /* persist locally so we re-seed on next reload */
+    dbPut({pubHex, seq:1, ih:t.infoHash, sig:rec.sig, k:pubHex,
+           name:'index.html', html, seen:Date.now()}).catch(e=>log('db: '+e.message,'w'));
+
+    /* live peer count of the content torrent */
+    const upd=()=>{ $('cSeedPill').textContent='seeding '+t.numPeers+' peers'; };
+    t.on('wire',upd); t.on('peer',upd); setInterval(upd,2000);
+
+    /* open-the-page shortcut */
+    $('cOpen').onclick = () => { location.hash = '#/visit/'+pubHex; };
+    $('cCopyAddr').onclick = () => navigator.clipboard.writeText('bep46:'+pubHex)
+      .then(()=>log('copied bep46: URI','ok')).catch(()=>{});
+    $('cCopySec').onclick = () => navigator.clipboard.writeText(secHex)
+      .then(()=>log('copied secret','ok')).catch(()=>{});
+    $('cDlSec').onclick = () => {
+      const blob=new Blob([secHex],{type:'text/plain'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob); a.download='bep46-'+pubHex.slice(0,8)+'.key'; a.click();
+    };
+
+    log('PUBLISHED — bep46:'+pubHex.slice(0,12)+'… v1','ok');
+  }catch(e){
+    log('create failed: '+e.message,'e');
+    $('cMake').disabled=false;
+  }
+};
+
+/* ───────────── VISIT ─────────────
+   Joining flow:
+   1. ensure a Channel exists for the address (so we hear the latest pointer)
+   2. if we have a cached HTML for this address, render it immediately
+   3. when a (possibly newer) pointer arrives, fetch content if needed,
+      re-render, persist. */
+$('vGo').onclick = () => {
+  const raw = $('vAddr').value.trim().toLowerCase().replace(/^bep46:/,'');
+  if(!/^[0-9a-f]{64}$/.test(raw)){ log('visit: need a 64-hex public key','e'); return; }
+  location.hash = '#/visit/'+raw;
+};
+
+async function startVisit(pubHex){
+  const ent = ensureActive(pubHex);
+  setCtx('visit-active',{ent});
+  /* offline-first: if we have a cached html, render right away */
+  try{
+    const cached = await dbGet(pubHex);
+    if(cached && cached.html){
+      ent.latestRec = {k:pubHex,seq:cached.seq,ih:cached.ih,sig:cached.sig};
+      ent.html = cached.html;
+      renderHtml(cached.html);
+      const verEl = $('ctx').querySelector('.ver');
+      if(verEl) verEl.textContent = 'v'+cached.seq;
+      const dl = $('ctxDl'); if(dl){ dl.textContent='cached'; dl.className='pill on'; }
+      log('rendered cached v'+cached.seq+' for '+pubHex.slice(0,10)+'…','ok');
+      /* try to re-seed the cached content so the swarm has us */
+      if(!ent.content){
+        try{
+          const t = await seedHtml(cached.html, cached.name||'index.html');
+          if(t.infoHash===cached.ih){
+            ent.content=t;
+            log('re-seeding cached v'+cached.seq+' ('+t.infoHash.slice(0,10)+'…)','ok');
+          } else {
+            try{ client.remove(t.infoHash); }catch(e){}
+            log('cached content hashed differently on re-seed — not contributing','w');
+          }
+        }catch(e){ log('re-seed failed: '+e.message,'w'); }
+      }
+    }
+  }catch(e){ log('cache lookup failed: '+e.message,'w'); }
+
+  /* join (or rejoin) the channel — seed with cached record if any */
+  if(!ent.channel){
+    ent.channel = new Channel(pubHex,
+      rec => onVisitPointer(ent, rec),
+      n => {
+        const p=$('ctxCh'); if(p) p.textContent='channel '+n+' peers';
+      },
+      ent.latestRec
+    );
+  } else if(ent.latestRec){
+    /* channel already there (e.g. revisit) — kick the renderer with what we have */
+    onVisitPointer(ent, ent.latestRec);
+  }
+}
+
+function onVisitPointer(ent, rec){
+  ent.latestRec = rec;
+  const verEl = $('ctx').querySelector('.ver');
+  if(verEl) verEl.textContent = 'v'+rec.seq;
+  if(ent.content && ent.content.infoHash === rec.ih){
+    /* already have this exact content rendered */
+    return;
+  }
+  /* drop any previous (older) content torrent before fetching the new one */
+  if(ent.content){ try{ client.remove(ent.content.infoHash); }catch(e){} ent.content=null; }
+  const dl=$('ctxDl');
+  if(dl){ dl.textContent='fetching v'+rec.seq+'…'; dl.className='pill warn'; }
+  log('visit: fetching v'+rec.seq+' '+rec.ih.slice(0,10)+'…');
+  const t = client.add(rec.ih,{announce:TRACKERS}, async torrent => {
+    ent.content = torrent;
+    try{
+      const html = await readTorrentHtml(torrent);
+      ent.html = html;
+      renderHtml(html);
+      const wait=$('frameWait'); if(wait) wait.classList.add('hide');
+      if(dl){ dl.textContent='live'; dl.className='pill on'; }
+      log('rendered v'+rec.seq+' for '+ent.pubHex.slice(0,10)+'…','ok');
+      /* persist — this is where the visitor becomes a long-term seeder */
+      dbPut({pubHex:ent.pubHex, seq:rec.seq, ih:rec.ih, sig:rec.sig, k:rec.k,
+             name:(torrent.files[0] && torrent.files[0].name)||'index.html',
+             html, seen:Date.now()}).catch(e=>log('db: '+e.message,'w'));
+      refreshSavedListSoon();
+    }catch(e){ log('failed to read html from torrent: '+e.message,'e'); }
+  });
+  t.on('wire', ()=>{ if(dl) dl.textContent='fetching v'+rec.seq+' ('+t.numPeers+'p)'; });
+  /* show a hint in the iframe overlay if we have no cached content */
+  if(!ent.html){
+    const wait=$('frameWait');
+    if(wait){ wait.classList.remove('hide'); wait.textContent='looking for peers seeding v'+rec.seq+'…'; }
+  }
+}
+
+/* Inject a small navigation shim at the top of every rendered page.
+   Authors write hyperlinks as <a href="bep46:&lt;64-hex&gt;">. The shim
+   intercepts clicks on those links and postMessages the target address
+   to this wrapper, which then flips the hash. The wrapperUrl is passed
+   in so that ctrl/meta/middle-click and target="_blank" can open the
+   page in a fresh wrapper tab regardless of where the wrapper itself
+   is hosted (file://, mrmartin.net, htmlpreview, …). */
+function injectNavApi(html, addr, wrapperUrl){
+  const script =
+    '<script>(function(){\n' +
+    '  window.bep46 = {\n' +
+    '    current: ' + JSON.stringify(addr) + ',\n' +
+    '    wrapperUrl: ' + JSON.stringify(wrapperUrl) + ',\n' +
+    '    visit: function(a){\n' +
+    '      try { parent.postMessage({__bep46_nav:1, address:String(a||"").toLowerCase()}, "*"); }\n' +
+    '      catch(e){}\n' +
+    '    }\n' +
+    '  };\n' +
+    '  document.addEventListener("click", function(e){\n' +
+    '    if (e.button !== 0) return;\n' +
+    '    var el = e.target;\n' +
+    '    while (el && el.tagName !== "A") el = el.parentNode;\n' +
+    '    if (!el) return;\n' +
+    '    var href = el.getAttribute("href") || "";\n' +
+    '    var m = href.match(/^bep46:([0-9a-fA-F]{64})$/);\n' +
+    '    if (!m) return;\n' +
+    '    e.preventDefault();\n' +
+    '    var target = m[1].toLowerCase();\n' +
+    '    var newTab = e.metaKey || e.ctrlKey || e.shiftKey || el.target === "_blank";\n' +
+    '    if (newTab) {\n' +
+    '      var w = null;\n' +
+    '      try { w = window.open(window.bep46.wrapperUrl + "#/visit/" + target, "_blank"); } catch(_){}\n' +
+    '      if (w) return;  // popup opened — done\n' +
+    '      /* popup blocked (common on file://) — fall back to in-place navigation */\n' +
+    '    }\n' +
+    '    window.bep46.visit(target);\n' +
+    '  }, true);\n' +
+    '})();</' + 'script>';
+  /* Place the shim inside <head> so window.bep46 is live before page
+     scripts run. Falls back to prepending if there's no doctype or head. */
+  if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, m => m + script);
+  const dt = html.match(/^(\s*<!doctype[^>]*>\s*)/i);
+  if (dt) return dt[1] + script + html.slice(dt[0].length);
+  return script + html;
+}
+
+function renderHtml(html){
+  /* Recreate the iframe instead of mutating srcdoc on the existing one.
+     Setting srcdoc on an iframe that already has a loaded srcdoc does not
+     reliably trigger a navigation — visitors would see the old version
+     even after we logged "rendered vN". Cloning the element forces a
+     fresh load every time. */
+  const addr = (location.hash.match(/^#\/visit\/([0-9a-fA-F]{64})/) || [])[1] || null;
+  const wrapperUrl = location.href.split('#')[0];
+  const wrapped = injectNavApi(html, addr ? addr.toLowerCase() : null, wrapperUrl);
+  const old = $('frame');
+  const f = document.createElement('iframe');
+  f.id = 'frame';
+  f.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals');
+  f.setAttribute('referrerpolicy', 'no-referrer');
+  f.srcdoc = wrapped;
+  old.parentNode.replaceChild(f, old);
+  /* anything that's actually on screen overrides the "looking for peers" overlay */
+  const wait = $('frameWait'); if (wait) wait.classList.add('hide');
+}
+
+/* Parent side: rendered pages postMessage us when the user clicks a
+   bep46: hyperlink. Validate the address shape and flip our route. */
+window.addEventListener('message', e => {
+  if (!e.data || e.data.__bep46_nav !== 1) return;
+  const target = String(e.data.address || '').toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(target)) return;
+  if (location.hash === '#/visit/' + target) return;  // already there
+  location.hash = '#/visit/' + target;
+});
+
+/* ───────────── UPDATE ───────────── */
+$('uSecPaste').onclick = () => $('uSecFile').click();
+$('uSecFile').onchange = async () => {
+  const f=$('uSecFile').files[0]; if(!f) return;
+  try{ const txt=(await readFileAsText(f)).trim().toLowerCase();
+       if(/^[0-9a-f]{128}$/.test(txt)){ $('uSec').value=txt; log('loaded secret from file','ok'); }
+       else log('that file does not contain a 128-hex secret','e');
+  }catch(e){ log('read failed: '+e.message,'e'); }
+};
+
+$('uGo').onclick = async () => {
+  const pubHex = $('uAddr').value.trim().toLowerCase().replace(/^bep46:/,'');
+  const secHex = $('uSec').value.trim().toLowerCase();
+  const file = $('uFile').files[0];
+  if(!/^[0-9a-f]{64}$/.test(pubHex)){ log('update: bad public key','e'); return; }
+  if(!/^[0-9a-f]{128}$/.test(secHex)){ log('update: bad secret key','e'); return; }
+  if(!file){ log('update: pick a new HTML file','e'); return; }
+  let pair;
+  try{ pair = nacl.sign.keyPair.fromSecretKey(fromHex(secHex)); }
+  catch(e){ log('secret malformed: '+e.message,'e'); return; }
+  if(toHex(pair.publicKey)!==pubHex){
+    log('this secret does NOT belong to that address','e'); return;
+  }
+  $('uGo').disabled=true;
+  try{
+    const html = await readFileAsText(file);
+    const ent = ensureActive(pubHex);
+    ent.secretKey = pair.secretKey;
+    log('seeding new content…');
+    const t = await seedHtml(html, 'index.html');
+    /* tear down any prior content torrent we held for this address */
+    if(ent.content && ent.content.infoHash!==t.infoHash){
+      try{ client.remove(ent.content.infoHash); }catch(e){}
+    }
+    ent.content = t;
+    ent.html = html;
+    /* attach the channel if we don't have one yet (e.g. updating from a fresh tab).
+       Pre-seed best from local cache so we never publish a seq below one we have
+       already seen — then wait briefly for the network to push us anything newer. */
+    if(!ent.channel){
+      const cached = await dbGet(pubHex);
+      const initial = cached ? {k:cached.k, seq:cached.seq, ih:cached.ih, sig:cached.sig} : null;
+      ent.channel = new Channel(pubHex,
+        rec => { ent.latestRec=rec; $('uSeqPill').textContent='current seq '+rec.seq; },
+        n => $('uChPill').textContent='channel '+n+' peers',
+        initial);
+      /* short sync window — give existing peers a chance to push the current best */
+      log('waiting briefly for network sync before publishing…');
+      const t0 = Date.now();
+      while(Date.now()-t0 < 2500){
+        await new Promise(r=>setTimeout(r,200));
+        if(ent.channel.wires.size > 0 && ent.channel.best && Date.now()-t0 > 800) break;
+      }
+    }
+    /* refuse to publish a no-op */
+    if(ent.channel.best && ent.channel.best.ih === t.infoHash){
+      log('this HTML is already published as seq '+ent.channel.best.seq+' — change a byte first','w');
+      $('uGo').disabled=false; return;
+    }
+    const seq = (ent.channel.best ? ent.channel.best.seq : 0) + 1;
+    const rec = signRecord(seq, t.infoHash, pubHex, pair.secretKey);
+    ent.channel.publish(rec);
+    log('PUBLISHED seq '+seq+' → '+t.infoHash.slice(0,10)+'…','ok');
+
+    dbPut({pubHex, seq, ih:t.infoHash, sig:rec.sig, k:pubHex,
+           name:'index.html', html, seen:Date.now()}).catch(e=>log('db: '+e.message,'w'));
+
+    $('uResult').style.display='block';
+    $('uIH').textContent=t.infoHash;
+    $('uNewSeqPill').textContent='published v'+seq;
+    const upd=()=>{ $('uSeedPill').textContent='seeding '+t.numPeers+' peers'; };
+    t.on('wire',upd); t.on('peer',upd); setInterval(upd,2000);
+    $('uOpen').onclick = () => { location.hash = '#/visit/'+pubHex; };
+  }catch(e){
+    log('update failed: '+e.message,'e');
+  }finally{
+    $('uGo').disabled=false;
+  }
+};
+
+/* ───────────── saved-list on home ───────────── */
+let _savedDebounce=null;
+function refreshSavedListSoon(){
+  clearTimeout(_savedDebounce);
+  _savedDebounce=setTimeout(refreshSavedList, 400);
+}
+async function refreshSavedList(){
+  const box=$('savedList'); if(!box) return;
+  let rows=[]; try{ rows=await dbAll(); }catch(e){ return; }
+  if(!rows.length){ box.innerHTML=''; return; }
+  rows.sort((a,b)=>(b.seen||0)-(a.seen||0));
+  const items = rows.map(r=>{
+    const lbl = 'bep46:'+r.pubHex.slice(0,8)+'…'+r.pubHex.slice(-4);
+    return `<div style="padding:4px 0">
+      <a data-go="#/visit/${r.pubHex}">${lbl}</a>
+      <span style="color:var(--dim)"> · v${r.seq||'?'} · seen ${new Date(r.seen||0).toLocaleString()}</span>
+    </div>`;
+  }).join('');
+  box.innerHTML = `<div style="margin-top:30px;border-top:1px solid var(--line);padding-top:18px">
+    <label>Pages you have visited (cached &amp; re-seeded)</label>${items}</div>`;
+  box.querySelectorAll('a[data-go]').forEach(a=>{
+    a.onclick = e => { e.preventDefault(); location.hash=a.dataset.go; };
+  });
+}
+
+/* ───────────── boot: rejoin channels for everything we have cached ─────────────
+   This is what makes "you become a seeder of the last version you have seen"
+   survive across sessions: on load we re-seed each cached html and rejoin its
+   channel. If the re-seed produces the right infohash we are immediately a
+   useful seeder; either way we contribute to the pointer gossip. */
+(async function reseedOnBoot(){
+  let rows=[]; try{ rows=await dbAll(); }catch(e){ return; }
+  for(const r of rows){
+    const ent=ensureActive(r.pubHex);
+    const initial = {k:r.pubHex,seq:r.seq,ih:r.ih,sig:r.sig};
+    ent.latestRec = initial;
+    ent.html=r.html;
+    /* rejoin channel quietly, seeded with the cached record */
+    ent.channel = new Channel(r.pubHex,
+      rec => {
+        ent.latestRec=rec;
+        if(rec.ih === (ent.content && ent.content.infoHash)) return;
+        /* a newer pointer arrived in the background — fetch & cache it */
+        if(rec.seq > (r.seq||0)){
+          const t = client.add(rec.ih,{announce:TRACKERS}, async torrent => {
+            ent.content=torrent;
+            try{
+              const html=await readTorrentHtml(torrent);
+              ent.html=html;
+              dbPut({pubHex:r.pubHex, seq:rec.seq, ih:rec.ih, sig:rec.sig, k:rec.k,
+                     name:(torrent.files[0]&&torrent.files[0].name)||'index.html',
+                     html, seen:Date.now()}).catch(()=>{});
+              log('background: cached v'+rec.seq+' for '+r.pubHex.slice(0,10)+'…','ok');
+              refreshSavedListSoon();
+              /* if the user is currently looking at this page, refresh it */
+              const m=(location.hash||'').match(/^#\/visit\/([0-9a-fA-F]{64})/);
+              if(m && m[1].toLowerCase()===r.pubHex) renderHtml(html);
+            }catch(e){}
+          });
+        }
+      },
+      ()=>{},
+      initial);
+    /* attempt deterministic re-seed of the cached version */
+    if(r.html){
+      try{
+        const t = await seedHtml(r.html, r.name||'index.html');
+        if(t.infoHash===r.ih){
+          ent.content=t;
+          log('boot: re-seeding '+r.pubHex.slice(0,10)+'… v'+r.seq+' ('+t.infoHash.slice(0,10)+'…)','ok');
+        } else {
+          try{ client.remove(t.infoHash); }catch(e){}
+          log('boot: re-seed of '+r.pubHex.slice(0,10)+'… produced different infohash, skipping','w');
+        }
+      }catch(e){ log('boot: re-seed failed for '+r.pubHex.slice(0,10)+'…: '+e.message,'w'); }
+    }
+  }
+  refreshSavedList();
+})();
+
+/* ───────────── initial route ───────────── */
+route();
+
+})();  /* end bootWhenReady */
 </script>
 </body>
 </html>

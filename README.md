@@ -1,83 +1,121 @@
-# bep46-webrtc
+# YOU ARE THE INTERNET
 
-Updatable torrents, in a single HTML file. [LIVE DEMO](https://htmlpreview.github.io/?https://github.com/mrmartin/bep46-webrtc/blob/main/bep46-webrtc.html)
+Serverless web pages. Addressed by a key, served by whoever has a tab open.
+A single HTML file ([`bep46-webrtc.html`](bep46-webrtc.html)) that runs in any
+modern browser — no install, no server, no build. Open it and you can publish
+a web page, visit someone else's page, or push an update to your own.
+
+[LIVE DEMO](https://htmlpreview.github.io/?https://github.com/mrmartin/bep46-webrtc/blob/main/bep46-webrtc.html)
+
+The wrapper turns the underlying `bep46:` address — an ed25519 public key — into
+something close to a URL. The bytes behind it are an HTML file, fetched over
+WebRTC and rendered in a sandboxed iframe. The key holder can re-point the
+address at new bytes at any time; everyone watching the address picks up the
+new version on the next gossip round.
+
+## What you can do from the homepage
+
+The home screen has three options:
+
+- **Create new content** — pick a single self-contained HTML file. A fresh
+  ed25519 keypair is generated. The file is seeded over WebRTC and signed as
+  version 1. You walk away with two strings: a **public address** to share and
+  a **secret key** to keep. That's it; the page exists.
+- **Visit a page** — paste a public address (`bep46:<64-hex>` or just the hex).
+  The wrapper joins the swarm for that address, waits for the signed pointer,
+  downloads the current version, and renders it inline with a small control
+  bar at the top (address, version, peer count). You silently become a seeder
+  of that version — so if the original author closes their tab, the page is
+  still reachable as long as one visitor's tab is open.
+- **Update your content** — enter the public address, paste (or load) the
+  secret key, pick a new HTML file. The new bytes are seeded, a signed
+  pointer with `seq+1` is broadcast, and anyone currently watching the address
+  refreshes within one heartbeat (≤ 3 s).
+
+## How it works
+
+The wrapper sits on top of the original BEP-46 / WebRTC core (signed
+mutable pointers gossiped through a WebTorrent rendezvous swarm at
+`sha1(publicKey)`). The new bits are:
+
+1. **HTML as the payload.** Every page is a single-file HTML, seeded under
+   the fixed filename `index.html` — so the same content always produces the
+   same infohash regardless of who's seeding, which is what makes
+   cross-session re-seeding work.
+2. **Sandboxed render.** The downloaded HTML is dropped into an `<iframe>`
+   via `srcdoc`. The iframe is sandboxed with `allow-scripts allow-forms
+   allow-popups allow-modals` — scripts can run, but the page cannot reach
+   this app's storage or keys (no `allow-same-origin`).
+3. **Persistent visitor seeding.** Every page you visit is cached in
+   IndexedDB (`bep46-pages`) along with its sequence number and infohash.
+   On every reopen of the wrapper, each cached page is automatically:
+   - re-seeded (deterministic same-infohash reproduction), and
+   - rejoined to its gossip channel,
+   so you continue to serve every page you have ever visited, for as long as
+   you keep coming back. If the wrapper hears a newer signed pointer for a
+   cached page, it silently fetches and updates the cache in the background.
+4. **Offline-first visit.** When you visit an address that's in your cache,
+   the cached HTML is rendered immediately (no peer wait), and only refreshed
+   if the swarm proves a newer signed version exists.
+5. **Hash routing.** `#/`, `#/create`, `#/visit/<pubHex>`, `#/update`. Visit
+   URLs are shareable — `bep46-webrtc.html#/visit/<key>` opens directly into
+   the page viewer.
+6. **Inter-page hyperlinks.** Pages link to each other with the `bep46:` URI
+   scheme:
+   ```html
+   <a href="bep46:5db78acb26ca299fa77bd97a2a10ad793d005b1f16ae25eebebdf21d8aa05284">friend's page</a>
+   ```
+   A small shim is injected into every rendered page that catches clicks on
+   these links and `postMessage`s the target address to the wrapper, which
+   flips its hash. Authors don't need to know where the wrapper lives —
+   it works the same whether `bep46-webrtc.html` is opened from `file://`,
+   `mrmartin.net/files/`, htmlpreview, or anywhere else. Ctrl/Cmd-click and
+   `target="_blank"` open the target in a fresh wrapper tab. The same shim
+   exposes a `window.bep46 = { current, wrapperUrl, visit(addr) }` API for
+   pages that want to navigate programmatically.
+
+## Trust model
+
+Same as the underlying BEP-46:
+
+- The **public address** is the ed25519 public key. It is the canonical name
+  of the page and cannot be forged.
+- The **secret key** is the only capability to publish. Anyone holding it
+  controls the address forever; lose it and the page becomes read-only
+  forever. There is no recovery. The wrapper never sends it anywhere — it is
+  used locally to sign and is offered as a downloadable `.key` file.
+- Every pointer is `(seq, infohash)` signed by the secret. Peers reject any
+  pointer whose signature doesn't verify, and any pointer whose `seq` is not
+  strictly greater than what they already hold.
+
+## Background — the protocol underneath
 
 BitTorrent is permanent by design: a torrent is identified by the hash of its
 own contents, so changing one byte makes a different torrent with a different
-address. That is great for integrity and useless for anything that evolves — a
-newspaper, a feed, a website. This project gives a torrent a **stable address
-that can be re-pointed at new content**, signed so only the owner can do it,
-and runs the whole thing client-side in the browser over WebRTC. No server, no
-build step, no install — open the file and go.
+address. That is great for integrity and useless for anything that evolves.
+[BEP 46 — *Updating Torrents Via DHT Mutable Items*](https://bittorrent.org/beps/bep_0046.html)
+solves this: instead of sharing an infohash, you share an **ed25519 public
+key**, the owner signs a small record that says "the current version is
+infohash X" and publishes it to the BitTorrent DHT under `sha1(publicKey)`,
+and anyone holding the public key polls that location for updates. BEP 46
+builds on [BEP 44](https://bittorrent.org/beps/bep_0044.html) (signed mutable
+items in the DHT).
 
-<img width="1440" height="2084" alt="image" src="https://github.com/user-attachments/assets/bab02bed-1541-4c0e-9856-70adf42b0b3c" />
-
-
-## Background
-
-The BitTorrent protocol has an extension for exactly this problem,
-[BEP 46 — *Updating Torrents Via DHT Mutable Items*](https://bittorrent.org/beps/bep_0046.html).
-The idea: instead of sharing the infohash of a torrent, you share an **ed25519
-public key**. The owner signs a small record that says "the current version is
-infohash X", publishes it to the BitTorrent DHT under `sha1(publicKey)`, and
-anyone holding the public key polls that location for updates. Because the DHT
-validates the signature, only the keyholder can ever change what the address
-points to. BEP 46 builds on [BEP 44](https://bittorrent.org/beps/bep_0044.html)
-(signed mutable items in the DHT) and is a more decentralized cousin of
-[BEP 39](https://bittorrent.org/beps/bep_0039.html) (feed updates over HTTP).
-
-BEP 46 has reference implementations — `lmatteis/dmt` (the author's original)
-and `RangerMauve/mutable-webtorrent` — but they are all **Node.js**, because
-they depend on the UDP-based mainline DHT. A browser cannot open a UDP socket,
-so a browser tab cannot join the mainline DHT, so spec-literal BEP 46 is
-impossible from a web page. WebTorrent's own extension-support table lists both
-BEP 44 and BEP 46 as unimplemented for this reason.
+The reference implementations (`lmatteis/dmt`, `RangerMauve/mutable-webtorrent`)
+are Node.js because they depend on the UDP-based mainline DHT. A browser
+cannot open a UDP socket, so a browser tab cannot join the mainline DHT, so
+spec-literal BEP 46 is impossible from a web page.
 
 This project keeps the **semantics** of BEP 46 — signed, owner-only,
-sequence-numbered updates — and swaps out the one piece a browser cannot have.
-The mainline DHT is replaced by a **WebRTC rendezvous swarm**. The cost is
-honest and stated up front: this does **not** interoperate with mainline
-BitTorrent or DHT-based BEP 46 clients. It is a self-contained mutable-torrent
-network among peers running this page.
-
-## Quick start
-
-Open `bep46-webrtc.html` in a browser. To see the full loop, use two tabs (or
-two devices):
-
-1. **Tab A** — Generate keypair → choose a file → Create torrent → Publish new version.
-2. **Tab B** — paste Tab A's `bep46:` address → Follow. The file appears with a download link.
-3. Back in **Tab A**, choose a *different* file → Create torrent → Publish. Tab B updates to `v2` on its own.
-
-Keep the publishing tab open: it is the seed for the content.
-
-## How it works — the gruesome detail
-
-The page has two moving parts: **content distribution** (ordinary WebTorrent)
-and the **mutable pointer layer** (the BEP 46 reconstruction). They are
-deliberately decoupled.
-
-### Identity
-
-An ed25519 keypair (via TweetNaCl, `nacl.sign.keyPair()`). The 32-byte public
-key, hex-encoded, *is* the mutable address — shareable as `bep46:<64-hex>`. The
-secret key is the sole capability to publish; the page never persists it.
-
-### The channel = `sha1(publicKey)`
-
-Every peer interested in an address joins a **WebTorrent swarm whose infohash
-is `sha1(publicKey)`**. This is not an accident — it is the exact target ID
-that BEP 46 uses to locate a record in the DHT. We use the same derivation, but
-as a swarm rendezvous point instead of a DHT key. Peers announcing the same
-40-hex value to the trackers get matched and WebRTC-connected to each other.
-
-The channel "torrent" has no content and no metadata. Nobody seeds it; it never
-completes. It exists purely so that WebTorrent's tracker + WebRTC machinery
-introduces interested peers to one another. We only want the peer wires.
+sequence-numbered updates — and swaps the one piece a browser cannot have.
+The mainline DHT is replaced by a **WebRTC rendezvous swarm**: every peer
+interested in an address joins a WebTorrent swarm whose infohash is
+`sha1(publicKey)`. That swarm carries no content; a custom wire-protocol
+extension named `bep46` gossips the signed pointer record. This does **not**
+interoperate with mainline BitTorrent or DHT-based BEP 46 clients — it is a
+self-contained mutable-torrent network among peers running this page.
 
 ### The pointer record
-
-The thing that travels is a signed JSON record:
 
 ```json
 {
@@ -90,98 +128,37 @@ The thing that travels is a signed JSON record:
 
 `ih` mirrors BEP 46's `v.ih` field. The signature covers a deterministic
 28-byte message — **8-byte big-endian `seq` concatenated with the 20-byte raw
-infohash** — so a record cannot be replayed at a different sequence number or
-have its target swapped without invalidating `sig`.
+infohash** — so a record cannot be replayed at a different sequence number
+or have its target swapped without invalidating `sig`.
 
-### Gossip over a wire-protocol extension
+### Heartbeat
 
-Each peer connection in the channel swarm gets a custom BitTorrent wire
-extension named `bep46`. It does three things:
+Each channel re-broadcasts its current best record every 3 seconds, so a
+peer that joins *after* a publish still syncs within one heartbeat.
+`_ingest` silently drops anything that isn't strictly newer, so re-broadcasts
+cost a signature verification and nothing else.
 
-- **On extended handshake** — push our current best record to the new peer, so
-  a peer that joins after a publish is brought up to date immediately.
-- **On message** — parse an incoming record and hand it to `_ingest`.
-- **`send`** — serialize a record and transmit it over the wire.
+## Dependencies
 
-`_ingest` is the gatekeeper. It (1) checks the record's `k` matches this
-channel, (2) verifies the ed25519 signature, (3) **rejects any record whose
-`seq` is not strictly greater than the best one already held** — this is the
-rollback protection BEP 44 mandates — and only then adopts it, re-broadcasts it
-to its own peers (gossip propagation), and fires the update callback.
-
-### The heartbeat
-
-A peer that connects *between* publishes would miss the one-shot broadcast. So
-the owner's channel **re-broadcasts its current best record every 3 seconds**.
-This is idempotent: `_ingest` silently drops anything that is not strictly
-newer, so re-broadcasts cost a signature verification and nothing else. BEP 44
-explicitly expects this — mutable items must be periodically re-put to stay
-alive. Publish-then-follow and follow-then-publish both converge within one
-heartbeat.
-
-### Content delivery
-
-When a follower adopts a record, it calls `client.add(ih)` on the **content**
-infohash. That is plain WebTorrent: tracker discovery, WebRTC data channels,
-piece exchange, the publisher seeding. When a *newer* record arrives, the old
-content torrent is removed and the new one added; the file list re-renders.
-Because BitTorrent is content-addressed, an unchanged file yields an unchanged
-infohash — publishing genuinely new content requires genuinely different bytes,
-and the UI enforces this rather than minting an empty new version.
-
-### Two implementation notes worth knowing
-
-- **Payload encoding.** `wire.extended(name, data)` transmits `data` verbatim
-  only when it is a `Buffer`; anything else is bencoded. A `Uint8Array` is not
-  a `Buffer`, so it gets wrapped as a bencoded byte string `<len>:<json>`. The
-  extension therefore sends a plain string and strips the `^\d+:` bencode
-  prefix on receipt before `JSON.parse`. A real record is JSON beginning with
-  `{`, never a digit, so the strip is unambiguous.
-- **SHA-1.** The channel derivation uses a small bundled SHA-1 rather than
-  `crypto.subtle`, so the page works when opened directly from `file://`
-  without a secure context.
-
-### Dependencies
-
-[WebTorrent](https://webtorrent.io) for WebRTC transport and
-[TweetNaCl](https://tweetnacl.js.org) for ed25519. Both loaded from a CDN. No
-build, no bundler, no backend.
+[WebTorrent](https://webtorrent.io) (WebRTC transport) and
+[TweetNaCl](https://tweetnacl.js.org) (ed25519). Both from a CDN. No build,
+no bundler, no backend.
 
 ## Known limitations
 
 - **Not mainline-interoperable.** By construction — see Background.
 - **WebSocket trackers are scarce.** Browser WebTorrent needs `wss://`
   trackers for WebRTC signaling, and the public pool has thinned to almost
-  nothing. For real deployment, run your own (e.g. Novage's `wt-tracker`) and
-  point the `TRACKERS` array at it.
-- **No offline persistence.** The pointer lives only in connected peers'
-  memory; if every peer holding the latest record goes offline, a new follower
-  has nothing to sync from until one returns. The mainline DHT provides exactly
-  this durability — replacing it is the obvious next milestone.
-- **The owner must seed.** Standard BitTorrent: someone has to hold the
-  content. Closing the publishing tab stops the seed.
-
-## End goal: peer-to-peer webhosting
-
-A website is a directory of files. A directory of files is a torrent. The only
-thing standing between "torrent" and "website" has always been that a website
-*changes* and a torrent cannot — which is precisely the gap a mutable address
-closes.
-
-The destination for this project is a browser that treats a `bep46:` address
-as a URL: resolve the public key to its current content torrent, fetch
-`index.html` and its assets over WebRTC, render the page — and silently reload
-when the owner publishes a new version. Publishing a site update becomes
-signing a 28-byte message. There is no origin server to seize, rate-limit, or
-bill; hosting cost is whoever keeps a tab open, and any visitor can mirror by
-simply continuing to seed. The publisher keeps a private key; everyone else
-keeps a public one. That is the entire trust model.
-
-This is the same ambition the Dat protocol and the Beaker browser pursued, but
-built on BitTorrent — a far larger, older, and more battle-tested swarm — and
-reachable from an unmodified web browser today. This single HTML file is the
-smallest working core of that idea: signed, updatable, serverless content,
-addressed by a key instead of a location.
+  nothing. For real deployment, run your own (e.g. Novage's `wt-tracker`).
+- **Single-file HTML only.** The payload is one self-contained HTML — all
+  CSS, JS, and assets must be inlined. No multi-file pages, no `<img src>`
+  to local assets. (The underlying torrent can carry multiple files; the
+  wrapper just doesn't expose that yet.)
+- **Cross-session re-seeding is best-effort.** Re-seeding produces the
+  original infohash only if WebTorrent's piece-splitting is deterministic
+  for our inputs. The wrapper checks the resulting infohash against the
+  cached one and only keeps the seed if they match; otherwise it logs a
+  warning and skips.
 
 ## License
 
