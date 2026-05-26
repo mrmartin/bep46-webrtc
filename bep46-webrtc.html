@@ -8,8 +8,18 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl.min.js"></script>
-<!-- if this CDN path ever 404s, swap to any host serving WebTorrent's browser bundle -->
-<script src="https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.js"></script>
+<!-- WebTorrent: pin to 1.9.7 — the last UMD build. From 2.0.0 the package is
+     "type": "module" / pure ESM, so a classic <script> tag silently fails to
+     define the WebTorrent global. The fallback below tries unpkg if jsdelivr
+     ever blocks or breaks this path. -->
+<script src="https://cdn.jsdelivr.net/npm/webtorrent@1.9.7/webtorrent.min.js"></script>
+<script>
+if (typeof WebTorrent === 'undefined') {
+  var s = document.createElement('script');
+  s.src = 'https://unpkg.com/webtorrent@1.9.7/webtorrent.min.js';
+  document.head.appendChild(s);
+}
+</script>
 <style>
   :root{
     --bg:#0c0d10; --panel:#131419; --line:#23252e; --ink:#e9e6dd;
@@ -256,6 +266,24 @@
  *   - visit   → resolve pub key, render HTML inline, re-seed
  *   - update  → sign & publish a new version
  * ============================================================ */
+
+(async function bootWhenReady(){
+  /* Wait until WebTorrent (UMD) and tweetnacl have both registered their
+     globals. The fallback <script> tag in <head> may still be loading. */
+  const deadline = Date.now() + 15000;
+  while ((typeof WebTorrent === 'undefined' || typeof nacl === 'undefined')
+         && Date.now() < deadline){
+    await new Promise(r => setTimeout(r, 80));
+  }
+  if (typeof WebTorrent === 'undefined' || typeof nacl === 'undefined'){
+    document.body.insertAdjacentHTML('afterbegin',
+      '<div style="background:#5a2424;color:#fff;padding:14px 18px;'
+      + 'font-family:monospace;font-size:13px;border-bottom:1px solid #e2645b">'
+      + 'Could not load WebTorrent or TweetNaCl from CDN. '
+      + 'Check your network and refresh, or open from a host that allows jsdelivr/unpkg.'
+      + '</div>');
+    return;
+  }
 
 /* ───────────── shared helpers ───────────── */
 const $ = id => document.getElementById(id);
@@ -877,6 +905,8 @@ async function refreshSavedList(){
 
 /* ───────────── initial route ───────────── */
 route();
+
+})();  /* end bootWhenReady */
 </script>
 </body>
 </html>
