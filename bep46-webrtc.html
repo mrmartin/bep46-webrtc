@@ -596,12 +596,15 @@ $('cMake').onclick = async () => {
     ent.content = t;
     log('seeding content '+t.infoHash.slice(0,10)+'… ('+t.files.length+' file)','ok');
 
-    /* join the channel as the owner so visitors can find us */
+    /* join the channel as the owner so visitors can find us.
+       Channel callbacks only update UI state — they must NOT write the
+       html to the DB, because this closure captures the create-time html
+       and would overwrite later-version caches with stale v1 bytes when
+       an update is published from this tab. Persistence happens at the
+       site that actually has the html (create/update/visit-fetch). */
     ent.channel = new Channel(pubHex,
       r=>{ ent.latestRec=r;
-           $('cSeqPill').textContent='seq '+r.seq;
-           dbPut({pubHex, seq:r.seq, ih:r.ih, sig:r.sig, k:r.k,
-                  name:'index.html', html, seen:Date.now()}).catch(()=>{}); },
+           $('cSeqPill').textContent='seq '+r.seq; },
       n=>{ $('cChPill').textContent='channel '+n+' peers'; });
 
     /* publish v1 immediately */
@@ -666,7 +669,7 @@ async function startVisit(pubHex){
       const verEl = $('ctx').querySelector('.ver');
       if(verEl) verEl.textContent = 'v'+cached.seq;
       const dl = $('ctxDl'); if(dl){ dl.textContent='cached'; dl.className='pill on'; }
-      log('rendered cached v'+cached.seq+' for '+pubHex.slice(0,10)+'… while looking for fresher','w');
+      log('rendered cached v'+cached.seq+' for '+pubHex.slice(0,10)+'…','ok');
       /* try to re-seed the cached content so the swarm has us */
       if(!ent.content){
         try{
@@ -736,11 +739,20 @@ function onVisitPointer(ent, rec){
 }
 
 function renderHtml(html){
-  const f = $('frame');
-  /* sandboxed iframe + srcdoc keeps the page isolated from this app and
-     from each other. allow-scripts is enabled so pages can be interactive,
-     but allow-same-origin is dropped so they can't reach our IndexedDB. */
+  /* Recreate the iframe instead of mutating srcdoc on the existing one.
+     Setting srcdoc on an iframe that already has a loaded srcdoc does not
+     reliably trigger a navigation — visitors would see the old version
+     even after we logged "rendered vN". Cloning the element forces a
+     fresh load every time. */
+  const old = $('frame');
+  const f = document.createElement('iframe');
+  f.id = 'frame';
+  f.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-modals');
+  f.setAttribute('referrerpolicy', 'no-referrer');
   f.srcdoc = html;
+  old.parentNode.replaceChild(f, old);
+  /* anything that's actually on screen overrides the "looking for peers" overlay */
+  const wait = $('frameWait'); if (wait) wait.classList.add('hide');
 }
 
 /* ───────────── UPDATE ───────────── */
