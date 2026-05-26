@@ -211,7 +211,7 @@ if (typeof WebTorrent === 'undefined') {
   </div>
   <!-- iframe + waiting overlay -->
   <div id="frameWrap">
-    <iframe id="frame" sandbox="allow-scripts allow-forms allow-popups allow-modals" referrerpolicy="no-referrer"></iframe>
+    <iframe id="frame" sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals" referrerpolicy="no-referrer"></iframe>
     <div id="frameWait" class="hide">looking for peers…</div>
   </div>
 </div>
@@ -738,22 +738,81 @@ function onVisitPointer(ent, rec){
   }
 }
 
+/* Inject a small navigation shim at the top of every rendered page.
+   Authors write hyperlinks as <a href="bep46:&lt;64-hex&gt;">. The shim
+   intercepts clicks on those links and postMessages the target address
+   to this wrapper, which then flips the hash. The wrapperUrl is passed
+   in so that ctrl/meta/middle-click and target="_blank" can open the
+   page in a fresh wrapper tab regardless of where the wrapper itself
+   is hosted (file://, mrmartin.net, htmlpreview, …). */
+function injectNavApi(html, addr, wrapperUrl){
+  const script =
+    '<script>(function(){\n' +
+    '  window.bep46 = {\n' +
+    '    current: ' + JSON.stringify(addr) + ',\n' +
+    '    wrapperUrl: ' + JSON.stringify(wrapperUrl) + ',\n' +
+    '    visit: function(a){\n' +
+    '      try { parent.postMessage({__bep46_nav:1, address:String(a||"").toLowerCase()}, "*"); }\n' +
+    '      catch(e){}\n' +
+    '    }\n' +
+    '  };\n' +
+    '  document.addEventListener("click", function(e){\n' +
+    '    if (e.button !== 0) return;\n' +
+    '    var el = e.target;\n' +
+    '    while (el && el.tagName !== "A") el = el.parentNode;\n' +
+    '    if (!el) return;\n' +
+    '    var href = el.getAttribute("href") || "";\n' +
+    '    var m = href.match(/^bep46:([0-9a-fA-F]{64})$/);\n' +
+    '    if (!m) return;\n' +
+    '    e.preventDefault();\n' +
+    '    var target = m[1].toLowerCase();\n' +
+    '    var newTab = e.metaKey || e.ctrlKey || e.shiftKey || el.target === "_blank";\n' +
+    '    if (newTab) {\n' +
+    '      var w = null;\n' +
+    '      try { w = window.open(window.bep46.wrapperUrl + "#/visit/" + target, "_blank"); } catch(_){}\n' +
+    '      if (w) return;  // popup opened — done\n' +
+    '      /* popup blocked (common on file://) — fall back to in-place navigation */\n' +
+    '    }\n' +
+    '    window.bep46.visit(target);\n' +
+    '  }, true);\n' +
+    '})();</' + 'script>';
+  /* Place the shim inside <head> so window.bep46 is live before page
+     scripts run. Falls back to prepending if there's no doctype or head. */
+  if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, m => m + script);
+  const dt = html.match(/^(\s*<!doctype[^>]*>\s*)/i);
+  if (dt) return dt[1] + script + html.slice(dt[0].length);
+  return script + html;
+}
+
 function renderHtml(html){
   /* Recreate the iframe instead of mutating srcdoc on the existing one.
      Setting srcdoc on an iframe that already has a loaded srcdoc does not
      reliably trigger a navigation — visitors would see the old version
      even after we logged "rendered vN". Cloning the element forces a
      fresh load every time. */
+  const addr = (location.hash.match(/^#\/visit\/([0-9a-fA-F]{64})/) || [])[1] || null;
+  const wrapperUrl = location.href.split('#')[0];
+  const wrapped = injectNavApi(html, addr ? addr.toLowerCase() : null, wrapperUrl);
   const old = $('frame');
   const f = document.createElement('iframe');
   f.id = 'frame';
-  f.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-modals');
+  f.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals');
   f.setAttribute('referrerpolicy', 'no-referrer');
-  f.srcdoc = html;
+  f.srcdoc = wrapped;
   old.parentNode.replaceChild(f, old);
   /* anything that's actually on screen overrides the "looking for peers" overlay */
   const wait = $('frameWait'); if (wait) wait.classList.add('hide');
 }
+
+/* Parent side: rendered pages postMessage us when the user clicks a
+   bep46: hyperlink. Validate the address shape and flip our route. */
+window.addEventListener('message', e => {
+  if (!e.data || e.data.__bep46_nav !== 1) return;
+  const target = String(e.data.address || '').toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(target)) return;
+  if (location.hash === '#/visit/' + target) return;  // already there
+  location.hash = '#/visit/' + target;
+});
 
 /* ───────────── UPDATE ───────────── */
 $('uSecPaste').onclick = () => $('uSecFile').click();

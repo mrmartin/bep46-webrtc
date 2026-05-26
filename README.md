@@ -60,6 +60,19 @@ mutable pointers gossiped through a WebTorrent rendezvous swarm at
 5. **Hash routing.** `#/`, `#/create`, `#/visit/<pubHex>`, `#/update`. Visit
    URLs are shareable — `bep46-webrtc.html#/visit/<key>` opens directly into
    the page viewer.
+6. **Inter-page hyperlinks.** Pages link to each other with the `bep46:` URI
+   scheme:
+   ```html
+   <a href="bep46:5db78acb26ca299fa77bd97a2a10ad793d005b1f16ae25eebebdf21d8aa05284">friend's page</a>
+   ```
+   A small shim is injected into every rendered page that catches clicks on
+   these links and `postMessage`s the target address to the wrapper, which
+   flips its hash. Authors don't need to know where the wrapper lives —
+   it works the same whether `bep46-webrtc.html` is opened from `file://`,
+   `mrmartin.net/files/`, htmlpreview, or anywhere else. Ctrl/Cmd-click and
+   `target="_blank"` open the target in a fresh wrapper tab. The same shim
+   exposes a `window.bep46 = { current, wrapperUrl, visit(addr) }` API for
+   pages that want to navigate programmatically.
 
 ## Trust model
 
