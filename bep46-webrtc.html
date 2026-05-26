@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BEP-46 / WebRTC — mutable torrents in the browser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl.min.js"></script>
+<!-- if this CDN path ever 404s, swap to any host serving WebTorrent's browser bundle -->
+<script src="https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.js"></script>
+<style>
+  :root{
+    --bg:#0c0d10; --panel:#131419; --line:#23252e; --ink:#e9e6dd;
+    --dim:#7e8088; --amber:#f0a13c; --amber-d:#3a2c14; --green:#7fd17a;
+    --red:#e2645b; --blue:#6fa8d8;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:14px;line-height:1.55}
+  body{
+    background-image:
+      radial-gradient(circle at 12% -10%, rgba(240,161,60,.08), transparent 45%),
+      radial-gradient(circle at 100% 0%, rgba(111,168,216,.06), transparent 40%);
+    min-height:100vh;padding:34px 20px 80px}
+  .wrap{max-width:880px;margin:0 auto}
+  header{border-bottom:1px solid var(--line);padding-bottom:22px;margin-bottom:26px}
+  h1{font-weight:700;font-size:23px;letter-spacing:.5px;margin:0 0 6px}
+  h1 .slash{color:var(--amber)}
+  .tag{color:var(--dim);font-size:12.5px;max-width:640px}
+  .tag b{color:var(--ink);font-weight:500}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+    padding:18px 18px 20px;margin-bottom:18px;position:relative}
+  .step{position:absolute;top:-11px;left:14px;background:var(--amber);color:#171206;
+    font-weight:700;font-size:11px;padding:2px 9px;border-radius:3px;letter-spacing:.5px}
+  h2{font-size:13px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;
+    color:var(--amber);margin:4px 0 14px}
+  label{display:block;color:var(--dim);font-size:11px;letter-spacing:.6px;
+    text-transform:uppercase;margin:12px 0 5px}
+  button{font-family:inherit;font-size:13px;background:var(--amber-d);color:var(--amber);
+    border:1px solid #5a4520;padding:8px 15px;border-radius:4px;cursor:pointer;
+    font-weight:500;transition:.13s}
+  button:hover:not(:disabled){background:#4d3a17;color:#ffc070}
+  button:disabled{opacity:.35;cursor:not-allowed}
+  button.ghost{background:transparent;border-color:var(--line);color:var(--dim)}
+  button.ghost:hover:not(:disabled){color:var(--ink);border-color:var(--dim);background:transparent}
+  input[type=text]{width:100%;font-family:inherit;font-size:12.5px;background:#0a0b0e;
+    color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:9px 10px}
+  input[type=text]:focus{outline:none;border-color:var(--amber)}
+  input[type=file]{font-family:inherit;font-size:12px;color:var(--dim)}
+  .row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+  .mono{font-size:11.5px;word-break:break-all;background:#0a0b0e;border:1px solid var(--line);
+    border-radius:4px;padding:8px 10px;color:var(--blue)}
+  .mono.key{color:var(--amber)}
+  .hint{color:var(--dim);font-size:11.5px;margin-top:8px}
+  .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;
+    border:1px solid var(--line);color:var(--dim);margin-right:6px}
+  .pill.on{color:var(--green);border-color:#2c4a2b}
+  .pill.warn{color:var(--amber);border-color:#5a4520}
+  .files{margin-top:10px;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+  .files div{display:flex;justify-content:space-between;padding:7px 10px;font-size:12px;
+    border-bottom:1px solid var(--line)}
+  .files div:last-child{border-bottom:none}
+  .files a{color:var(--green);text-decoration:none}
+  .files a:hover{text-decoration:underline}
+  .ver{font-size:30px;font-weight:700;color:var(--green);line-height:1}
+  .ver.none{color:var(--dim);font-size:16px;font-weight:400}
+  #log{background:#070809;border:1px solid var(--line);border-radius:6px;padding:12px 14px;
+    height:170px;overflow:auto;font-size:11.5px;line-height:1.65}
+  #log .t{color:var(--dim)}
+  #log .e{color:var(--red)} #log .ok{color:var(--green)} #log .w{color:var(--amber)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:620px){.grid2{grid-template-columns:1fr}}
+  a.lnk{color:var(--blue)}
+  .reveal{cursor:pointer;color:var(--dim);font-size:11px;text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>BEP-46 <span class="slash">/</span> WebRTC</h1>
+  <div class="tag">Mutable torrents, entirely in the browser. The channel ID is
+  <b>sha1(publicKey)</b> — the same target BEP-46 uses in the DHT — but the signed pointer
+  is gossiped over a <b>WebRTC rendezvous swarm</b> instead of the mainline DHT.
+  Owner-only updates, ed25519-signed, sequence-numbered.</div>
+</header>
+
+<!-- ───────────── IDENTITY ───────────── -->
+<section>
+  <span class="step">1 · IDENTITY</span>
+  <h2>Your keypair = your mutable address</h2>
+  <div class="row">
+    <button id="gen">Generate keypair</button>
+    <button class="ghost" id="impBtn">Import secret</button>
+    <button class="ghost" id="expBtn" disabled>Export secret</button>
+  </div>
+  <div id="impWrap" style="display:none">
+    <label>Paste 128-hex secret key</label>
+    <div class="row">
+      <input type="text" id="impKey" placeholder="ed25519 secret key (hex)" style="flex:1;min-width:240px">
+      <button id="impGo">Load</button>
+    </div>
+  </div>
+  <label>Public key — share this as the address <span class="reveal" id="copyAddr">[copy bep46: URI]</span></label>
+  <div class="mono key" id="pub">— not generated —</div>
+  <label>Secret key <span class="reveal" id="secToggle">[reveal]</span></label>
+  <div class="mono" id="sec">••••••••••••••••••••••••••••••••</div>
+  <div class="hint">Keep the secret offline. Anyone holding it can publish updates to this address.</div>
+</section>
+
+<!-- ───────────── PUBLISH ───────────── -->
+<section>
+  <span class="step">2 · CREATE &amp; PUBLISH</span>
+  <h2>Seed content, then point your address at it</h2>
+  <label>Select file(s) to put in the torrent</label>
+  <div class="row">
+    <input type="file" id="files" multiple>
+    <button id="create" disabled>Create torrent</button>
+  </div>
+  <div class="hint">Publishing a new version is always two clicks: <b>Create torrent</b>
+  (seeds the chosen file), then <b>Publish new version</b>. Selecting a different file
+  re-arms Create — you must Create again before you can Publish it.</div>
+  <div id="contentBox" style="display:none">
+    <label>Content infohash (the current version)</label>
+    <div class="mono" id="contentIH"></div>
+    <div class="row" style="margin-top:12px">
+      <button id="publish" disabled>Publish new version</button>
+      <span class="pill" id="seqPill">seq —</span>
+      <span class="pill" id="seedPill">seeding 0 peers</span>
+    </div>
+    <div class="hint">Each publish increments the sequence number, re-signs, and gossips the
+    new pointer. A heartbeat keeps re-broadcasting it every 3 s, so a follower that joins
+    <i>after</i> a publish still syncs. Keep this tab open to keep seeding.</div>
+  </div>
+</section>
+
+<!-- ───────────── FOLLOW ───────────── -->
+<section>
+  <span class="step">3 · FOLLOW &amp; AUTO-UPDATE</span>
+  <h2>Track an address — content reloads when the owner publishes</h2>
+  <label>Address to follow (public key hex, or bep46:&lt;hex&gt;)</label>
+  <div class="row">
+    <input type="text" id="followKey" placeholder="ed25519 public key" style="flex:1;min-width:240px">
+    <button id="follow">Follow</button>
+  </div>
+  <div id="followBox" style="display:none;margin-top:14px">
+    <div class="grid2">
+      <div>
+        <label>Current version</label>
+        <div class="ver none" id="ver">waiting…</div>
+      </div>
+      <div>
+        <label>Status</label>
+        <div>
+          <span class="pill" id="chPill">channel 0 peers</span>
+          <span class="pill" id="dlPill">idle</span>
+        </div>
+      </div>
+    </div>
+    <label style="margin-top:14px">Pointer infohash</label>
+    <div class="mono" id="followIH">—</div>
+    <div class="files" id="followFiles" style="display:none"></div>
+  </div>
+  <div class="hint">Test it with two browser tabs (or two devices): publish in one, follow the
+  same address in the other. Following your own address in the same tab is blocked — one
+  WebTorrent client can't join a swarm twice.</div>
+</section>
+
+<section style="padding-bottom:14px">
+  <h2 style="margin-bottom:10px">Event log</h2>
+  <div id="log"></div>
+</section>
+
+<div class="tag" style="margin-top:6px">
+  Built on <a class="lnk" href="https://webtorrent.io" target="_blank" rel="noopener">WebTorrent</a>
+  (WebRTC transport) + <a class="lnk" href="https://tweetnacl.js.org" target="_blank" rel="noopener">TweetNaCl</a>
+  (ed25519). Spec reference: <a class="lnk" href="https://bittorrent.org/beps/bep_0046.html" target="_blank" rel="noopener">BEP-46</a>.
+</div>
+</div>
+
+<script>
+"use strict";
+/* ───────────────────────── helpers ───────────────────────── */
+const $ = id => document.getElementById(id);
+const TRACKERS = [
+  'wss://tracker.openwebtorrent.com',
+  'wss://tracker.webtorrent.dev'
+];
+const enc = new TextEncoder(), dec = new TextDecoder();
+const toHex = u => [...u].map(b=>b.toString(16).padStart(2,'0')).join('');
+const fromHex = h => { const u=new Uint8Array(h.length/2);
+  for(let i=0;i<u.length;i++) u[i]=parseInt(h.substr(i*2,2),16); return u; };
+
+function log(msg,cls){
+  const el=$('log'); const t=new Date().toTimeString().slice(0,8);
+  const line=document.createElement('div');
+  line.innerHTML=`<span class="t">${t}</span> <span class="${cls||''}">${msg}</span>`;
+  el.appendChild(line); el.scrollTop=el.scrollHeight;
+}
+
+/* compact SHA-1 (bytes -> hex) so the file works on file:// without crypto.subtle */
+function sha1hex(bytes){
+  function rol(n,s){return (n<<s)|(n>>>(32-s));}
+  const ml=bytes.length*8;
+  const withOne=new Uint8Array(((bytes.length+8)>>6)+1<<6);
+  withOne.set(bytes); withOne[bytes.length]=0x80;
+  const dv=new DataView(withOne.buffer);
+  dv.setUint32(withOne.length-4, ml>>>0, false);
+  dv.setUint32(withOne.length-8, Math.floor(ml/0x100000000), false);
+  let h0=0x67452301,h1=0xEFCDAB89,h2=0x98BADCFE,h3=0x10325476,h4=0xC3D2E1F0;
+  const w=new Int32Array(80);
+  for(let i=0;i<withOne.length;i+=64){
+    for(let j=0;j<16;j++) w[j]=dv.getInt32(i+j*4,false);
+    for(let j=16;j<80;j++) w[j]=rol(w[j-3]^w[j-8]^w[j-14]^w[j-16],1);
+    let a=h0,b=h1,c=h2,d=h3,e=h4;
+    for(let j=0;j<80;j++){
+      let f,k;
+      if(j<20){f=(b&c)|(~b&d);k=0x5A827999;}
+      else if(j<40){f=b^c^d;k=0x6ED9EBA1;}
+      else if(j<60){f=(b&c)|(b&d)|(c&d);k=0x8F1BBCDC;}
+      else{f=b^c^d;k=0xCA62C1D6;}
+      const tmp=(rol(a,5)+f+e+k+w[j])|0;
+      e=d;d=c;c=rol(b,30);b=a;a=tmp;
+    }
+    h0=(h0+a)|0;h1=(h1+b)|0;h2=(h2+c)|0;h3=(h3+d)|0;h4=(h4+e)|0;
+  }
+  return [h0,h1,h2,h3,h4].map(x=>(x>>>0).toString(16).padStart(8,'0')).join('');
+}
+
+/* the signed message: 8-byte big-endian seq || 20-byte infohash  */
+function pointerMessage(seq, ihHex){
+  const m=new Uint8Array(28); const dv=new DataView(m.buffer);
+  dv.setBigUint64(0, BigInt(seq), false);
+  m.set(fromHex(ihHex), 8);
+  return m;
+}
+function signRecord(seq, ihHex, pubHex, secKey){
+  const sig = nacl.sign.detached(pointerMessage(seq,ihHex), secKey);
+  return { k:pubHex, seq, ih:ihHex, sig:toHex(sig) };           // BEP-46 shape: v.ih
+}
+function verifyRecord(rec){
+  if(!rec||typeof rec.seq!=='number'||!/^[0-9a-f]{40}$/.test(rec.ih||'')) return false;
+  if(!/^[0-9a-f]{64}$/.test(rec.k||'')||!/^[0-9a-f]{128}$/.test(rec.sig||'')) return false;
+  try{ return nacl.sign.detached.verify(
+    pointerMessage(rec.seq,rec.ih), fromHex(rec.sig), fromHex(rec.k)); }
+  catch(e){ return false; }
+}
+
+/* ───────────────────────── state ───────────────────────── */
+let client = new WebTorrent();
+client.on('error', e => log('client: '+e.message,'e'));
+log('WebTorrent client up — peerId '+client.peerId.slice(0,8),'ok');
+
+let kp = null;            // {publicKey, secretKey, pubHex}
+let contentTorrent = null;
+let pubChannel = null;    // Channel — owner side
+let followChannel = null; // Channel — consumer side
+let seedInterval = null;  // seed-status poll (cleared on re-create)
+
+/* ─────────── Channel: a WebRTC rendezvous swarm at sha1(pubkey) ─────────── */
+/* every peer interested in a public key joins a WebTorrent swarm whose       */
+/* infohash = sha1(pubkey); a wire extension gossips the signed pointer.      */
+class Channel {
+  constructor(pubHex, onRecord, onPeers){
+    this.pubHex=pubHex; this.onRecord=onRecord; this.onPeers=onPeers;
+    this.best=null;                 // best verified record we hold
+    this.wires=new Set();
+    this.channelId=sha1hex(fromHex(pubHex));
+    log('channel id = '+this.channelId.slice(0,16)+'… for key '+pubHex.slice(0,12)+'…');
+    this.torrent=client.add(this.channelId,{announce:TRACKERS,name:'bep46-channel'});
+    this.torrent.on('wire', w=>this._attach(w));
+    this.torrent.on('warning',()=>{});
+    /* BEP-44/46: periodically re-announce the pointer so a follower that joins
+       AFTER a publish still receives the current version (idempotent — _ingest
+       drops anything that isn't strictly newer). */
+    this._beat=setInterval(()=>{ if(this.best) this.broadcast(this.best); },3000);
+  }
+  _attach(wire){
+    const self=this;
+    function bep46(w){ this.w=w; }
+    bep46.prototype.name='bep46';
+    bep46.prototype.onExtendedHandshake=function(){
+      self.wires.add(this.w); this.w._bep46=this; self._peers();
+      if(self.best) this.send(self.best);            // bring new peer up to date
+    };
+    bep46.prototype.onMessage=function(buf){
+      /* wire.extended() bencodes a non-Buffer payload as a byte string
+         "<len>:<json>" — strip that prefix before parsing. A real record is
+         JSON and starts with '{', never a digit, so ^\d+: only ever matches
+         the bencode wrapper. */
+      let txt; try{ txt=dec.decode(buf); }catch(e){ return; }
+      const m=txt.match(/^(\d+):/);
+      if(m) txt=txt.slice(m[1].length+1);
+      let rec; try{ rec=JSON.parse(txt); }
+      catch(e){ log('dropped malformed pointer message','w'); return; }
+      self._ingest(rec);
+    };
+    bep46.prototype.send=function(rec){
+      /* pass a STRING, not a Uint8Array: bittorrent-protocol only transmits a
+         payload untouched when Buffer.isBuffer() is true, otherwise it bencodes
+         it. A Uint8Array is not a Buffer, so it would be silently mangled. */
+      try{ this.w.extended('bep46', JSON.stringify(rec)); }
+      catch(e){ log('send failed: '+e.message,'w'); }
+    };
+    wire.use(bep46);
+    wire.once('close',()=>{ this.wires.delete(wire); this._peers(); });
+  }
+  _peers(){ if(this.onPeers) this.onPeers(this.wires.size); }
+  _ingest(rec){
+    if(rec.k!==this.pubHex) return;                  // not our channel
+    if(!verifyRecord(rec)){ log('rejected pointer: bad signature','w'); return; }
+    if(this.best && rec.seq<=this.best.seq) return;  // rollback protection / dedupe
+    this.best=rec;
+    log('accepted pointer seq '+rec.seq+' → '+rec.ih.slice(0,12)+'…','ok');
+    this.broadcast(rec);                             // gossip onward
+    if(this.onRecord) this.onRecord(rec);
+  }
+  /* called locally by the owner when publishing */
+  publish(rec){ this._ingest(rec); }
+  broadcast(rec){ this.wires.forEach(w=> w._bep46 && w._bep46.send(rec)); }
+  destroy(){ clearInterval(this._beat); try{ client.remove(this.channelId); }catch(e){} }
+}
+
+/* ───────────────────────── 1 · identity ───────────────────────── */
+function setKeypair(pair){
+  kp={ publicKey:pair.publicKey, secretKey:pair.secretKey, pubHex:toHex(pair.publicKey) };
+  $('pub').textContent=kp.pubHex;
+  $('sec').dataset.val=toHex(pair.secretKey);
+  $('sec').textContent='••••••••••••••••••••••••••••••••';
+  $('secToggle').textContent='[reveal]';
+  $('expBtn').disabled=false;
+  $('create').disabled=$('files').files.length===0;   // armable once a file is chosen
+  log('identity ready — address '+kp.pubHex.slice(0,16)+'…','ok');
+  /* owner joins its own channel so followers can find it */
+  if(pubChannel) pubChannel.destroy();
+  pubChannel=new Channel(kp.pubHex, r=>{ $('seqPill').textContent='seq '+r.seq; },
+                         ()=>{});
+}
+$('gen').onclick=()=>setKeypair(nacl.sign.keyPair());
+$('impBtn').onclick=()=>{ const w=$('impWrap'); w.style.display=w.style.display==='none'?'block':'none'; };
+$('impGo').onclick=()=>{
+  const h=$('impKey').value.trim().toLowerCase();
+  if(!/^[0-9a-f]{128}$/.test(h)){ log('import: need 128 hex chars','e'); return; }
+  try{ setKeypair(nacl.sign.keyPair.fromSecretKey(fromHex(h)));
+       $('impWrap').style.display='none'; }
+  catch(e){ log('import failed: '+e.message,'e'); }
+};
+$('secToggle').onclick=()=>{
+  const el=$('sec'); if(!el.dataset.val) return;
+  if(el.textContent[0]==='•'){ el.textContent=el.dataset.val; $('secToggle').textContent='[hide]'; }
+  else{ el.textContent='••••••••••••••••••••••••••••••••'; $('secToggle').textContent='[reveal]'; }
+};
+$('copyAddr').onclick=()=>{
+  if(!kp) return;
+  navigator.clipboard.writeText('bep46:'+kp.pubHex)
+    .then(()=>log('copied bep46: URI to clipboard','ok'))
+    .catch(()=>log('clipboard blocked — select the field manually','w'));
+};
+$('expBtn').onclick=()=>{
+  if(!kp) return;
+  const blob=new Blob([toHex(kp.secretKey)],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download='bep46-secret.key'; a.click();
+  log('secret key exported to file','w');
+};
+
+/* ───────────────────────── 2 · create & publish ───────────────────────── */
+/* picking new file(s) re-arms Create and locks Publish until the new torrent
+   actually exists — prevents publishing a new seq that still points at the
+   previously-seeded infohash. */
+$('files').onchange=()=>{
+  if(!$('files').files.length) return;
+  if(!kp){ log('select made — generate a keypair, then click Create torrent','w'); return; }
+  $('create').disabled=false;
+  $('publish').disabled=true;
+  log('new file(s) selected — click Create torrent to seed them','w');
+};
+
+$('create').onclick=()=>{
+  const fl=$('files').files;
+  if(!fl.length){ log('select at least one file','e'); return; }
+  if(!kp){ log('generate a keypair first','e'); return; }
+  $('create').disabled=true;
+  log('creating torrent from '+fl.length+' file(s)…');
+  client.seed(fl,{announce:TRACKERS},torrent=>{
+    contentTorrent=torrent;
+    $('contentBox').style.display='block';
+    $('contentIH').textContent=torrent.infoHash;
+    $('publish').disabled=false;
+    log('seeding content infohash '+torrent.infoHash.slice(0,16)+'…','ok');
+    if(seedInterval) clearInterval(seedInterval);    // don't leak intervals on re-create
+    const upd=()=>{ $('seedPill').textContent='seeding '+torrent.numPeers+' peers'; };
+    torrent.on('wire',upd); torrent.on('peer',upd);
+    seedInterval=setInterval(upd,2000);
+  });
+};
+
+$('publish').onclick=()=>{
+  if(!contentTorrent||!kp||!pubChannel) return;
+  /* refuse to mint a new seq for content that is already the current pointer —
+     a new version requires a genuinely different infohash (i.e. Create again
+     with a different file). */
+  if(pubChannel.best && pubChannel.best.ih===contentTorrent.infoHash){
+    log('this exact content is already published as seq '+pubChannel.best.seq+
+        ' — select a new file and click Create torrent first','w');
+    return;
+  }
+  const seq=(pubChannel.best?pubChannel.best.seq:0)+1;
+  const rec=signRecord(seq, contentTorrent.infoHash, kp.pubHex, kp.secretKey);
+  pubChannel.publish(rec);                 // verifies, stores, gossips to followers
+  $('seqPill').textContent='seq '+seq;
+  log('PUBLISHED version seq '+seq+' → '+contentTorrent.infoHash.slice(0,12)+
+      '… to '+pubChannel.wires.size+' follower(s)','ok');
+};
+
+/* ───────────────────────── 3 · follow & auto-update ───────────────────────── */
+$('follow').onclick=()=>{
+  let h=$('followKey').value.trim().toLowerCase().replace(/^bep46:/,'');
+  if(!/^[0-9a-f]{64}$/.test(h)){ log('follow: need a 64-hex public key','e'); return; }
+  if(kp && h===kp.pubHex){
+    log('that is your own address — open a second tab to test following','w'); return;
+  }
+  if(followChannel) followChannel.destroy();
+  $('followBox').style.display='block';
+  $('ver').className='ver none'; $('ver').textContent='waiting…';
+  log('following '+h.slice(0,16)+'…');
+  followChannel=new Channel(h, onPointer, n=>{
+    $('chPill').textContent='channel '+n+' peers';
+  });
+};
+let followContent=null;
+function onPointer(rec){
+  $('ver').className='ver'; $('ver').textContent='v'+rec.seq;
+  $('followIH').textContent=rec.ih;
+  if(followContent && followContent.infoHash===rec.ih){
+    log('v'+rec.seq+' points at the same content as before — nothing to re-download','w');
+    return;
+  }
+  if(followContent){ try{ client.remove(followContent.infoHash); }catch(e){} }
+  $('dlPill').textContent='fetching…'; $('dlPill').className='pill warn';
+  $('followFiles').style.display='none'; $('followFiles').innerHTML='';
+  log('loading content for v'+rec.seq+' — '+rec.ih.slice(0,12)+'…');
+  followContent=client.add(rec.ih,{announce:TRACKERS},torrent=>{
+    log('metadata received for v'+rec.seq+' ('+torrent.files.length+' files)','ok');
+    $('dlPill').textContent='ready'; $('dlPill').className='pill on';
+    renderFiles(torrent);
+  });
+  followContent.on('wire',()=>{ $('dlPill').textContent='fetching ('+followContent.numPeers+'p)'; });
+}
+function renderFiles(torrent){
+  const box=$('followFiles'); box.innerHTML=''; box.style.display='block';
+  torrent.files.forEach(file=>{
+    const row=document.createElement('div');
+    const kb=(file.length/1024).toFixed(1)+' KB';
+    row.innerHTML=`<span>${file.name}</span><span><span style="color:var(--dim)">${kb}</span>
+      &nbsp; <a href="#">download</a></span>`;
+    const a=row.querySelector('a');
+    a.onclick=ev=>{
+      ev.preventDefault(); a.textContent='…';
+      const done=url=>{ a.textContent='download'; a.href=url; a.download=file.name;
+        const t=document.createElement('a'); t.href=url; t.download=file.name; t.click(); };
+      if(file.blob){ file.blob().then(b=>done(URL.createObjectURL(b)))
+                              .catch(e=>{a.textContent='err';log('blob: '+e.message,'e');}); }
+      else if(file.getBlobURL){ file.getBlobURL((e,url)=>{
+        if(e){a.textContent='err';log('blobURL: '+e.message,'e');return;} done(url); }); }
+    };
+    box.appendChild(row);
+  });
+}
+</script>
+</body>
+</html>
