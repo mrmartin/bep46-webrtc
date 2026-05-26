@@ -10,6 +10,9 @@ that can be re-pointed at new content**, signed so only the owner can do it,
 and runs the whole thing client-side in the browser over WebRTC. No server, no
 build step, no install — open the file and go.
 
+<img width="1440" height="2084" alt="image" src="https://github.com/user-attachments/assets/bab02bed-1541-4c0e-9856-70adf42b0b3c" />
+
+
 ## Background
 
 The BitTorrent protocol has an extension for exactly this problem,
