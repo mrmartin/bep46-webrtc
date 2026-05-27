@@ -896,7 +896,11 @@ function resolveBep46Asset(pubHex){
       }
       return out;
     }
-    /* 2. Join (or reuse) the channel and wait for the latest pointer. */
+    /* 2. Join (or reuse) the channel and wait for the latest pointer.
+       Cold join needs WSS tracker connect + WebRTC handshake + a heartbeat
+       window for the pointer to gossip in — 60s is comfortably above the
+       p95 in our testing; below that, fetches from never-seen swarms fail
+       intermittently. */
     const ent = ensureActive(pubHex);
     if(!ent.channel){
       ent.channel = new Channel(pubHex,
@@ -904,18 +908,19 @@ function resolveBep46Asset(pubHex){
         ()=>{},
         ent.latestRec);
     }
-    const deadline = Date.now() + 15000;
+    const POINTER_TIMEOUT = 60000;
+    const deadline = Date.now() + POINTER_TIMEOUT;
     while((!ent.latestRec || !ent.latestRec.ih) && Date.now() < deadline){
       await new Promise(r => setTimeout(r, 200));
     }
     if(!ent.latestRec || !ent.latestRec.ih){
-      throw new Error('no pointer found for bep46:'+pubHex.slice(0,10)+'…');
+      throw new Error('no pointer for bep46:'+pubHex.slice(0,10)+'… (no peer seeding it within '+(POINTER_TIMEOUT/1000)+'s)');
     }
     /* 3. Fetch the content torrent and read the first file. */
     const rec = ent.latestRec;
     const torrent = await new Promise((res, rej) => {
       const t = client.add(rec.ih, {announce:TRACKERS}, t2 => res(t2));
-      setTimeout(() => rej(new Error('torrent timeout for '+pubHex.slice(0,10)+'…')), 30000);
+      setTimeout(() => rej(new Error('torrent timeout for bep46:'+pubHex.slice(0,10)+'…')), 90000);
     });
     ent.content = torrent;
     const got = await readTorrentFile(torrent);
@@ -958,7 +963,17 @@ async function rewriteBep46Refs(html){
   };
   collect(attrRe); collect(cssRe);
   if(addrs.size === 0) return html;
-  log('resolving '+addrs.size+' bep46 reference(s) inside page…');
+  const total = addrs.size;
+  log('resolving '+total+' bep46 reference(s) inside page…');
+  const overlay = $('frameWait');
+  let done = 0;
+  const showProgress = () => {
+    if(overlay){
+      overlay.classList.remove('hide');
+      overlay.textContent = 'resolving embedded asset'+(total===1?'':'s')+' '+done+'/'+total+'…';
+    }
+  };
+  showProgress();
   const subs = new Map();
   await Promise.all([...addrs].map(async addr => {
     try{
@@ -967,6 +982,7 @@ async function rewriteBep46Refs(html){
     }catch(e){
       log('resolve bep46:'+addr.slice(0,8)+'… failed: '+e.message,'w');
     }
+    done++; showProgress();
   }));
   const swap = (block) => block.replace(/bep46:([0-9a-fA-F]{64})/g,
     (full, key) => subs.get(key.toLowerCase()) || full);
