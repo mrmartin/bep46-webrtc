@@ -100,9 +100,12 @@ if (typeof WebTorrent === 'undefined') {
   .crumb a:hover{color:var(--ink);border-color:var(--ink)}
 
   /* iframe page viewer */
-  #frameWrap{flex:1;display:none;background:#fff;position:relative}
+  #frameWrap{flex:1;min-height:0;display:none;background:#fff;position:relative}
   #frameWrap.active{display:block}
-  #frame{width:100%;height:100%;border:0;background:#fff;display:block}
+  /* position:absolute + inset:0 — height:100% on an iframe whose parent is
+     flex-sized doesn't resolve in Chrome (the iframe falls back to its UA
+     default 150px). Pinning to the relative parent fills it reliably. */
+  #frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#fff;display:block}
   #frameWait{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     background:rgba(12,13,16,.92);color:var(--dim);font-size:12px}
   #frameWait.hide{display:none}
@@ -143,7 +146,7 @@ if (typeof WebTorrent === 'undefined') {
     <div class="options">
       <div class="opt" data-go="#/create">
         <h3>Create new content</h3>
-        <p>Upload a single HTML file. Get a public address you can share and a secret key that lets you publish updates.</p>
+        <p>Upload any file — HTML page, image, video, audio, document. Get a public address you can share and a secret key that lets you publish updates.</p>
       </div>
       <div class="opt" data-go="#/visit">
         <h3>Visit a page</h3>
@@ -151,7 +154,7 @@ if (typeof WebTorrent === 'undefined') {
       </div>
       <div class="opt" data-go="#/update">
         <h3>Update your content</h3>
-        <p>Enter your address and secret, pick a new HTML file. The new version is signed and gossiped across the network.</p>
+        <p>Enter your address and secret, pick a new file. The new version is signed and gossiped across the network.</p>
       </div>
     </div>
 
@@ -164,10 +167,10 @@ if (typeof WebTorrent === 'undefined') {
   <div class="wrap">
     <div class="crumb"><a href="#/">← home</a> &nbsp;/&nbsp; create new content</div>
     <section>
-      <h2>Step 1 · Pick your HTML</h2>
-      <label>Single HTML file (everything inline — no external assets)</label>
+      <h2>Step 1 · Pick your file</h2>
+      <label>Any file — HTML for a page, or images / videos / audio / documents to host as standalone bep46 assets that other pages can embed via <code>bep46:&lt;hex&gt;</code></label>
       <div class="row">
-        <input type="file" id="cFile" accept=".html,.htm,text/html">
+        <input type="file" id="cFile">
         <button id="cMake">Create &amp; publish</button>
       </div>
       <div class="hint">A new ed25519 keypair is generated for you. The file is seeded over WebRTC and the
@@ -227,8 +230,8 @@ if (typeof WebTorrent === 'undefined') {
       <label>Secret key (128-hex) <span class="reveal" id="uSecPaste">[paste from .key file]</span></label>
       <input type="text" id="uSec" placeholder="128-hex ed25519 secret key">
       <input type="file" id="uSecFile" accept=".key,.txt,text/plain" style="display:none">
-      <label>New HTML file</label>
-      <input type="file" id="uFile" accept=".html,.htm,text/html">
+      <label>New file (any type — must replace the previous payload)</label>
+      <input type="file" id="uFile">
       <div class="row" style="margin-top:14px">
         <button id="uGo">Sign &amp; publish new version</button>
         <span class="pill" id="uSeqPill">current seq —</span>
@@ -296,6 +299,13 @@ const toHex = u => [...u].map(b=>b.toString(16).padStart(2,'0')).join('');
 const fromHex = h => { const u=new Uint8Array(h.length/2);
   for(let i=0;i<u.length;i++) u[i]=parseInt(h.substr(i*2,2),16); return u; };
 const short = h => h ? h.slice(0,10)+'…'+h.slice(-6) : '—';
+function humanBytes(n){
+  if(n < 1024) return n+' B';
+  const u = ['KB','MB','GB','TB'];
+  let v = n/1024, i = 0;
+  while(v >= 1024 && i < u.length-1){ v /= 1024; i++; }
+  return (v < 10 ? v.toFixed(1) : Math.round(v)) + ' ' + u[i];
+}
 
 function log(msg,cls){
   const el=$('log'); if(!el) return;
@@ -353,11 +363,14 @@ function verifyRecord(rec){
   catch(e){ return false; }
 }
 
-/* ───────────── IndexedDB cache: pages we have seen ─────────────
-   schema: pages keyed by pubHex, holds {pubHex, seq, ih, sig, name,
-   html (string), torrentFile (Uint8Array or null), seen (timestamp)}.
-   torrentFile lets us re-seed the SAME infohash deterministically on
-   page reopen — without it we can only re-fetch, not re-seed. */
+/* ───────────── IndexedDB cache: content we have seen ─────────────
+   schema: 'pages' keyed by pubHex, holds {pubHex, seq, ih, sig, k,
+   name, bytes (Uint8Array), mime (string), seen (timestamp)}.
+
+   Older records (DB v1) used `html` (string) instead of bytes+mime —
+   the readers below transparently up-convert via recordBytes/recordMime,
+   so we don't need an onupgradeneeded migration. New writes always use
+   bytes+mime so the next read is canonical. */
 const DB_NAME='bep46-pages', DB_VER=1;
 let dbp = new Promise((res,rej)=>{
   const r=indexedDB.open(DB_NAME,DB_VER);
@@ -365,6 +378,20 @@ let dbp = new Promise((res,rej)=>{
   r.onsuccess=()=>res(r.result);
   r.onerror=()=>rej(r.error);
 });
+/* Up-convert a DB record into a canonical {bytes, mime} pair. */
+function recordBytes(r){
+  if(!r) return null;
+  if(r.bytes instanceof Uint8Array) return r.bytes;
+  if(r.bytes && r.bytes.buffer) return new Uint8Array(r.bytes.buffer);
+  if(typeof r.html === 'string') return enc.encode(r.html);
+  return null;
+}
+function recordMime(r){
+  if(!r) return 'application/octet-stream';
+  if(r.mime) return r.mime;
+  if(typeof r.html === 'string') return 'text/html';
+  return mimeFromName(r.name);
+}
 async function dbPut(rec){
   const db=await dbp;
   return new Promise((res,rej)=>{
@@ -479,31 +506,54 @@ function readFileAsBytes(f){
   });
 }
 
-/* Seed a single HTML string. Returns the WebTorrent torrent object.
-   Filename is fixed to "index.html" so the same content always yields
-   the same infohash across browsers — important for re-seed determinism. */
-function seedHtml(htmlString, name){
-  const blob=new Blob([htmlString],{type:'text/html'});
-  const file=new File([blob], name||'index.html', {type:'text/html'});
+/* MIME guess from filename extension. Used to drive how a payload is
+   rendered (html → iframe, image/video/audio → embed/download, anything
+   else → download). Only covers types we want to handle specially —
+   everything else collapses to application/octet-stream. */
+const MIME_BY_EXT = {
+  html:'text/html', htm:'text/html',
+  css:'text/css', js:'application/javascript', json:'application/json',
+  txt:'text/plain', md:'text/markdown', svg:'image/svg+xml',
+  png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif',
+  webp:'image/webp', avif:'image/avif', bmp:'image/bmp', ico:'image/x-icon',
+  mp4:'video/mp4', webm:'video/webm', mov:'video/quicktime',
+  mp3:'audio/mpeg', wav:'audio/wav', ogg:'audio/ogg', m4a:'audio/mp4',
+  pdf:'application/pdf', wasm:'application/wasm',
+  woff:'font/woff', woff2:'font/woff2', ttf:'font/ttf', otf:'font/otf'
+};
+function mimeFromName(name){
+  const m = String(name||'').toLowerCase().match(/\.([a-z0-9]+)$/);
+  return (m && MIME_BY_EXT[m[1]]) || 'application/octet-stream';
+}
+
+/* Seed an arbitrary file. Returns the WebTorrent torrent object.
+   The filename is part of the torrent metadata, so the same (bytes,
+   name) pair always yields the same infohash across browsers — which
+   is what makes cross-session re-seeding work. */
+function seedFile(bytes, name, mime){
+  const fname = name || 'content.bin';
+  const blob = new Blob([bytes], {type: mime || 'application/octet-stream'});
+  const file = new File([blob], fname, {type: mime || 'application/octet-stream'});
   return new Promise((res,rej)=>{
-    /* explicit name on the torrent options so the .torrent metadata is
-       byte-identical regardless of File constructor quirks */
-    client.seed([file],{announce:TRACKERS,name:name||'index.html'}, t=>res(t));
+    client.seed([file], {announce:TRACKERS, name:fname}, t=>res(t));
     setTimeout(()=>rej(new Error('seed timeout')), 30000);
   });
 }
 
-/* Pull an html file's content out of a torrent. Returns string. */
-function readTorrentHtml(torrent){
+/* Pull the first file out of a torrent as raw bytes + a mime guess.
+   Returns {bytes:Uint8Array, name:string, mime:string}. */
+function readTorrentFile(torrent){
   return new Promise((res,rej)=>{
     if(!torrent.files || !torrent.files.length) return rej(new Error('no files in torrent'));
-    /* prefer the first .html file; fall back to first file overall */
-    const f = torrent.files.find(x=>/\.html?$/i.test(x.name)) || torrent.files[0];
+    const f = torrent.files[0];
     const finish = blob => {
       const r=new FileReader();
-      r.onload=()=>res(r.result);
+      r.onload=()=>{
+        const bytes = new Uint8Array(r.result);
+        res({bytes, name:f.name, mime:mimeFromName(f.name)});
+      };
       r.onerror=()=>rej(r.error);
-      r.readAsText(blob,'utf-8');
+      r.readAsArrayBuffer(blob);
     };
     if(f.blob){ f.blob().then(finish).catch(rej); return; }
     if(f.getBlob){ f.getBlob((e,b)=>e?rej(e):finish(b)); return; }
@@ -522,9 +572,18 @@ function setView(name){
   const el=document.getElementById('view-'+name);
   if(el) el.classList.add('active');
 }
-function navHome(){ setView('home'); refreshSavedList(); setCtx(''); }
-function navCreate(){ setView('create'); setCtx('creating'); }
-function navUpdate(){ setView('update'); setCtx('updating'); }
+const DEFAULT_TITLE = document.title;
+function setBrowserTitle(t){ document.title = t ? t+' — bep46' : DEFAULT_TITLE; }
+function extractHtmlTitle(html){
+  const m = String(html||'').match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if(!m) return '';
+  /* decode the handful of entities that commonly appear in titles */
+  return m[1].replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+    .replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/\s+/g,' ').trim();
+}
+function navHome(){ setView('home'); refreshSavedList(); setCtx(''); setBrowserTitle(''); }
+function navCreate(){ setView('create'); setCtx('creating'); setBrowserTitle(''); }
+function navUpdate(){ setView('update'); setCtx('updating'); setBrowserTitle(''); }
 function navVisit(pubHex){
   setView('visit');
   if(!pubHex){
@@ -579,20 +638,22 @@ document.querySelectorAll('#view-home .opt').forEach(el=>{
 /* ───────────── CREATE ───────────── */
 $('cMake').onclick = async () => {
   const f = $('cFile').files[0];
-  if(!f){ log('pick an HTML file first','e'); return; }
+  if(!f){ log('pick a file first','e'); return; }
   $('cMake').disabled=true;
   log('creating new page from '+f.name+' ('+f.size+' bytes)…');
   try{
-    const html = await readFileAsText(f);
+    const bytes = await readFileAsBytes(f);
+    const name = f.name || 'content.bin';
+    const mime = mimeFromName(name);
     const pair = nacl.sign.keyPair();
     const pubHex = toHex(pair.publicKey);
     const secHex = toHex(pair.secretKey);
     const ent = ensureActive(pubHex);
     ent.secretKey = pair.secretKey;
-    ent.html = html;
+    ent.bytes = bytes; ent.mime = mime; ent.name = name;
 
-    log('seeding html…');
-    const t = await seedHtml(html, 'index.html');
+    log('seeding '+mime+'…');
+    const t = await seedFile(bytes, name, mime);
     ent.content = t;
     log('seeding content '+t.infoHash.slice(0,10)+'… ('+t.files.length+' file)','ok');
 
@@ -619,7 +680,7 @@ $('cMake').onclick = async () => {
 
     /* persist locally so we re-seed on next reload */
     dbPut({pubHex, seq:1, ih:t.infoHash, sig:rec.sig, k:pubHex,
-           name:'index.html', html, seen:Date.now()}).catch(e=>log('db: '+e.message,'w'));
+           name, bytes, mime, seen:Date.now()}).catch(e=>log('db: '+e.message,'w'));
 
     /* live peer count of the content torrent */
     const upd=()=>{ $('cSeedPill').textContent='seeding '+t.numPeers+' peers'; };
@@ -659,13 +720,16 @@ $('vGo').onclick = () => {
 async function startVisit(pubHex){
   const ent = ensureActive(pubHex);
   setCtx('visit-active',{ent});
-  /* offline-first: if we have a cached html, render right away */
+  /* offline-first: if we have cached content, render right away */
   try{
     const cached = await dbGet(pubHex);
-    if(cached && cached.html){
+    const cachedBytes = recordBytes(cached);
+    if(cachedBytes){
+      const cachedMime = recordMime(cached);
+      const cachedName = cached.name || 'content.bin';
       ent.latestRec = {k:pubHex,seq:cached.seq,ih:cached.ih,sig:cached.sig};
-      ent.html = cached.html;
-      renderHtml(cached.html);
+      ent.bytes = cachedBytes; ent.mime = cachedMime; ent.name = cachedName;
+      await renderPayload(cachedBytes, cachedMime, cachedName);
       const verEl = $('ctx').querySelector('.ver');
       if(verEl) verEl.textContent = 'v'+cached.seq;
       const dl = $('ctxDl'); if(dl){ dl.textContent='cached'; dl.className='pill on'; }
@@ -673,7 +737,7 @@ async function startVisit(pubHex){
       /* try to re-seed the cached content so the swarm has us */
       if(!ent.content){
         try{
-          const t = await seedHtml(cached.html, cached.name||'index.html');
+          const t = await seedFile(cachedBytes, cachedName, cachedMime);
           if(t.infoHash===cached.ih){
             ent.content=t;
             log('re-seeding cached v'+cached.seq+' ('+t.infoHash.slice(0,10)+'…)','ok');
@@ -717,22 +781,21 @@ function onVisitPointer(ent, rec){
   const t = client.add(rec.ih,{announce:TRACKERS}, async torrent => {
     ent.content = torrent;
     try{
-      const html = await readTorrentHtml(torrent);
-      ent.html = html;
-      renderHtml(html);
+      const {bytes, name, mime} = await readTorrentFile(torrent);
+      ent.bytes = bytes; ent.mime = mime; ent.name = name;
+      await renderPayload(bytes, mime, name);
       const wait=$('frameWait'); if(wait) wait.classList.add('hide');
       if(dl){ dl.textContent='live'; dl.className='pill on'; }
       log('rendered v'+rec.seq+' for '+ent.pubHex.slice(0,10)+'…','ok');
       /* persist — this is where the visitor becomes a long-term seeder */
       dbPut({pubHex:ent.pubHex, seq:rec.seq, ih:rec.ih, sig:rec.sig, k:rec.k,
-             name:(torrent.files[0] && torrent.files[0].name)||'index.html',
-             html, seen:Date.now()}).catch(e=>log('db: '+e.message,'w'));
+             name, bytes, mime, seen:Date.now()}).catch(e=>log('db: '+e.message,'w'));
       refreshSavedListSoon();
-    }catch(e){ log('failed to read html from torrent: '+e.message,'e'); }
+    }catch(e){ log('failed to read content from torrent: '+e.message,'e'); }
   });
   t.on('wire', ()=>{ if(dl) dl.textContent='fetching v'+rec.seq+' ('+t.numPeers+'p)'; });
   /* show a hint in the iframe overlay if we have no cached content */
-  if(!ent.html){
+  if(!ent.bytes){
     const wait=$('frameWait');
     if(wait){ wait.classList.remove('hide'); wait.textContent='looking for peers seeding v'+rec.seq+'…'; }
   }
@@ -744,7 +807,13 @@ function onVisitPointer(ent, rec){
    to this wrapper, which then flips the hash. The wrapperUrl is passed
    in so that ctrl/meta/middle-click and target="_blank" can open the
    page in a fresh wrapper tab regardless of where the wrapper itself
-   is hosted (file://, mrmartin.net, htmlpreview, …). */
+   is hosted (file://, mrmartin.net, htmlpreview, …).
+
+   External links (http(s)://, mailto:, tel:, …) are also intercepted:
+   plain click → postMessage to wrapper, which top-navigates this tab to
+   the URL (mirrors normal anchor behavior so the wrapper doesn't get
+   stuck showing a sandboxed cross-origin page inside its iframe).
+   Modifier-click → window.open in a fresh tab. */
 function injectNavApi(html, addr, wrapperUrl){
   const script =
     '<script>(function(){\n' +
@@ -756,24 +825,37 @@ function injectNavApi(html, addr, wrapperUrl){
     '      catch(e){}\n' +
     '    }\n' +
     '  };\n' +
+    '  function isExternal(h){\n' +
+    '    return /^(?:https?|mailto|tel|ftp|sms|magnet):/i.test(h);\n' +
+    '  }\n' +
     '  document.addEventListener("click", function(e){\n' +
     '    if (e.button !== 0) return;\n' +
     '    var el = e.target;\n' +
     '    while (el && el.tagName !== "A") el = el.parentNode;\n' +
     '    if (!el) return;\n' +
     '    var href = el.getAttribute("href") || "";\n' +
-    '    var m = href.match(/^bep46:([0-9a-fA-F]{64})$/);\n' +
-    '    if (!m) return;\n' +
-    '    e.preventDefault();\n' +
-    '    var target = m[1].toLowerCase();\n' +
+    '    if (!href || href.charAt(0) === "#") return;\n' +
     '    var newTab = e.metaKey || e.ctrlKey || e.shiftKey || el.target === "_blank";\n' +
-    '    if (newTab) {\n' +
-    '      var w = null;\n' +
-    '      try { w = window.open(window.bep46.wrapperUrl + "#/visit/" + target, "_blank"); } catch(_){}\n' +
-    '      if (w) return;  // popup opened — done\n' +
-    '      /* popup blocked (common on file://) — fall back to in-place navigation */\n' +
+    '    var m = href.match(/^bep46:([0-9a-fA-F]{64})$/);\n' +
+    '    if (m) {\n' +
+    '      e.preventDefault();\n' +
+    '      var target = m[1].toLowerCase();\n' +
+    '      if (newTab) {\n' +
+    '        var w = null;\n' +
+    '        try { w = window.open(window.bep46.wrapperUrl + "#/visit/" + target, "_blank"); } catch(_){}\n' +
+    '        if (w) return;\n' +
+    '      }\n' +
+    '      window.bep46.visit(target);\n' +
+    '      return;\n' +
     '    }\n' +
-    '    window.bep46.visit(target);\n' +
+    '    if (isExternal(href)) {\n' +
+    '      e.preventDefault();\n' +
+    '      if (newTab) {\n' +
+    '        try { window.open(href, "_blank", "noopener,noreferrer"); } catch(_){}\n' +
+    '        return;\n' +
+    '      }\n' +
+    '      try { parent.postMessage({__bep46_external:1, href:href}, "*"); } catch(_){}\n' +
+    '    }\n' +
     '  }, true);\n' +
     '})();</' + 'script>';
   /* Place the shim inside <head> so window.bep46 is live before page
@@ -782,6 +864,156 @@ function injectNavApi(html, addr, wrapperUrl){
   const dt = html.match(/^(\s*<!doctype[^>]*>\s*)/i);
   if (dt) return dt[1] + script + html.slice(dt[0].length);
   return script + html;
+}
+
+/* ───────────── bep46 asset resolution ─────────────
+   Pages can reference other bep46-addressed content (images, videos,
+   stylesheets, etc.) via the bep46:<hex> URI scheme. The wrapper resolves
+   those references before handing the HTML to the iframe: each reference
+   is fetched (cache-first), then inlined as a data URL so it loads inside
+   the sandboxed iframe regardless of origin. */
+
+const assetCache = new Map();   // pubHex -> Promise<{bytes, mime, name}>
+
+function resolveBep46Asset(pubHex){
+  pubHex = pubHex.toLowerCase();
+  if(assetCache.has(pubHex)) return assetCache.get(pubHex);
+  const p = (async () => {
+    /* 1. Try the IDB cache first — instant, offline-friendly. */
+    let cached = null;
+    try{ cached = await dbGet(pubHex); }catch(e){}
+    const cachedBytes = recordBytes(cached);
+    if(cachedBytes){
+      const out = {bytes:cachedBytes, mime:recordMime(cached), name:cached.name||'content.bin'};
+      /* Best-effort re-seed so we contribute back to the swarm. */
+      const ent = ensureActive(pubHex);
+      if(!ent.content){
+        try{
+          const t = await seedFile(out.bytes, out.name, out.mime);
+          if(t.infoHash === cached.ih){ ent.content = t; }
+          else { try{ client.remove(t.infoHash); }catch(e){} }
+        }catch(e){}
+      }
+      return out;
+    }
+    /* 2. Join (or reuse) the channel and wait for the latest pointer. */
+    const ent = ensureActive(pubHex);
+    if(!ent.channel){
+      ent.channel = new Channel(pubHex,
+        rec => { ent.latestRec = rec; },
+        ()=>{},
+        ent.latestRec);
+    }
+    const deadline = Date.now() + 15000;
+    while((!ent.latestRec || !ent.latestRec.ih) && Date.now() < deadline){
+      await new Promise(r => setTimeout(r, 200));
+    }
+    if(!ent.latestRec || !ent.latestRec.ih){
+      throw new Error('no pointer found for bep46:'+pubHex.slice(0,10)+'…');
+    }
+    /* 3. Fetch the content torrent and read the first file. */
+    const rec = ent.latestRec;
+    const torrent = await new Promise((res, rej) => {
+      const t = client.add(rec.ih, {announce:TRACKERS}, t2 => res(t2));
+      setTimeout(() => rej(new Error('torrent timeout for '+pubHex.slice(0,10)+'…')), 30000);
+    });
+    ent.content = torrent;
+    const got = await readTorrentFile(torrent);
+    ent.bytes = got.bytes; ent.mime = got.mime; ent.name = got.name;
+    /* Persist so future visits / referrers find it instantly. */
+    dbPut({pubHex, seq:rec.seq, ih:rec.ih, sig:rec.sig, k:rec.k,
+           name:got.name, bytes:got.bytes, mime:got.mime, seen:Date.now()}).catch(()=>{});
+    return got;
+  })();
+  assetCache.set(pubHex, p);
+  p.catch(() => assetCache.delete(pubHex));  // allow retry on failure
+  return p;
+}
+
+/* Chunked base64 encoder — String.fromCharCode(...bytes) blows the stack
+   for big files; chunk the spread call. */
+function bytesToBase64(bytes){
+  let s = '';
+  const CHUNK = 0x8000;
+  for(let i=0; i<bytes.length; i+=CHUNK){
+    s += String.fromCharCode.apply(null, bytes.subarray(i, i+CHUNK));
+  }
+  return btoa(s);
+}
+
+/* Rewrite bep46:<hex> references inside resource-loading attributes
+   (src/poster/data/srcset) and CSS url() to inline data URLs. We leave
+   <a href="bep46:…"> alone — the nav shim handles those as navigation,
+   not asset loads. */
+async function rewriteBep46Refs(html){
+  const attrRe = /\b(?:src|poster|data|srcset|content)\s*=\s*(["'])((?:(?!\1)[\s\S])*?bep46:[0-9a-fA-F]{64}(?:(?!\1)[\s\S])*?)\1/gi;
+  const cssRe  = /url\(\s*(['"]?)([^'")]*?bep46:[0-9a-fA-F]{64}[^'")]*?)\1\s*\)/gi;
+  const addrs = new Set();
+  const collect = (re) => {
+    let m;
+    while((m = re.exec(html)) !== null){
+      const refs = m[0].match(/bep46:[0-9a-fA-F]{64}/g);
+      if(refs) refs.forEach(r => addrs.add(r.slice(6).toLowerCase()));
+    }
+  };
+  collect(attrRe); collect(cssRe);
+  if(addrs.size === 0) return html;
+  log('resolving '+addrs.size+' bep46 reference(s) inside page…');
+  const subs = new Map();
+  await Promise.all([...addrs].map(async addr => {
+    try{
+      const {bytes, mime} = await resolveBep46Asset(addr);
+      subs.set(addr, 'data:'+mime+';base64,'+bytesToBase64(bytes));
+    }catch(e){
+      log('resolve bep46:'+addr.slice(0,8)+'… failed: '+e.message,'w');
+    }
+  }));
+  const swap = (block) => block.replace(/bep46:([0-9a-fA-F]{64})/g,
+    (full, key) => subs.get(key.toLowerCase()) || full);
+  return html
+    .replace(attrRe, m => swap(m))
+    .replace(cssRe,  m => swap(m));
+}
+
+/* Trigger a browser download of arbitrary bytes. Used when a visited
+   bep46 address resolves to a non-html payload. */
+function triggerDownload(bytes, mime, name){
+  const blob = new Blob([bytes], {type: mime || 'application/octet-stream'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name || 'content.bin';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 2000);
+}
+
+/* Dispatch: HTML payloads get rewritten + rendered in the iframe.
+   Anything else triggers a download and shows a small notice. */
+async function renderPayload(bytes, mime, name){
+  if(mime === 'text/html' || mime === 'application/xhtml+xml'){
+    let html;
+    try{ html = dec.decode(bytes); }
+    catch(e){ log('decode failed: '+e.message,'e'); return; }
+    setBrowserTitle(extractHtmlTitle(html) || name);
+    try{ html = await rewriteBep46Refs(html); }
+    catch(e){ log('asset rewrite failed: '+e.message,'w'); }
+    renderHtml(html);
+    return;
+  }
+  setBrowserTitle(name);
+  triggerDownload(bytes, mime, name);
+  const safe = String(name||'content.bin').replace(/[<>&"']/g,
+    c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+  const notice = '<!doctype html><meta charset="utf-8"><title>downloaded</title>'
+    + '<style>body{background:#0c0d10;color:#e9e6dd;font:14px/1.6 ui-monospace,monospace;'
+    + 'padding:32px;margin:0;text-align:center}'
+    + '.ok{color:#7fd17a}.dim{color:#7e8088}h2{font-weight:600;margin:60px 0 12px}</style>'
+    + '<h2 class="ok">downloaded</h2><p><code>'+safe+'</code></p>'
+    + '<p class="dim">type: '+mime+' · '+bytes.length.toLocaleString()+' bytes</p>'
+    + '<p class="dim">non-html bep46 payload — saved to your downloads folder.</p>';
+  renderHtml(notice);
 }
 
 function renderHtml(html){
@@ -807,11 +1039,24 @@ function renderHtml(html){
 /* Parent side: rendered pages postMessage us when the user clicks a
    bep46: hyperlink. Validate the address shape and flip our route. */
 window.addEventListener('message', e => {
-  if (!e.data || e.data.__bep46_nav !== 1) return;
-  const target = String(e.data.address || '').toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(target)) return;
-  if (location.hash === '#/visit/' + target) return;  // already there
-  location.hash = '#/visit/' + target;
+  const d = e.data;
+  if (!d) return;
+  if (d.__bep46_nav === 1) {
+    const target = String(d.address || '').toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(target)) return;
+    if (location.hash === '#/visit/' + target) return;
+    location.hash = '#/visit/' + target;
+    return;
+  }
+  if (d.__bep46_external === 1) {
+    /* Plain click on an external link inside the iframe: navigate the
+       wrapper tab itself. The sandbox can't top-nav directly, so the
+       iframe forwards the href and we do it from here. */
+    const href = String(d.href || '');
+    if (!/^(?:https?|mailto|tel|ftp|sms|magnet):/i.test(href)) return;
+    location.href = href;
+    return;
+  }
 });
 
 /* ───────────── UPDATE ───────────── */
@@ -830,7 +1075,7 @@ $('uGo').onclick = async () => {
   const file = $('uFile').files[0];
   if(!/^[0-9a-f]{64}$/.test(pubHex)){ log('update: bad public key','e'); return; }
   if(!/^[0-9a-f]{128}$/.test(secHex)){ log('update: bad secret key','e'); return; }
-  if(!file){ log('update: pick a new HTML file','e'); return; }
+  if(!file){ log('update: pick a new file','e'); return; }
   let pair;
   try{ pair = nacl.sign.keyPair.fromSecretKey(fromHex(secHex)); }
   catch(e){ log('secret malformed: '+e.message,'e'); return; }
@@ -839,17 +1084,19 @@ $('uGo').onclick = async () => {
   }
   $('uGo').disabled=true;
   try{
-    const html = await readFileAsText(file);
+    const bytes = await readFileAsBytes(file);
+    const name = file.name || 'content.bin';
+    const mime = mimeFromName(name);
     const ent = ensureActive(pubHex);
     ent.secretKey = pair.secretKey;
-    log('seeding new content…');
-    const t = await seedHtml(html, 'index.html');
+    log('seeding new content ('+mime+')…');
+    const t = await seedFile(bytes, name, mime);
     /* tear down any prior content torrent we held for this address */
     if(ent.content && ent.content.infoHash!==t.infoHash){
       try{ client.remove(ent.content.infoHash); }catch(e){}
     }
     ent.content = t;
-    ent.html = html;
+    ent.bytes = bytes; ent.mime = mime; ent.name = name;
     /* attach the channel if we don't have one yet (e.g. updating from a fresh tab).
        Pre-seed best from local cache so we never publish a seq below one we have
        already seen — then wait briefly for the network to push us anything newer. */
@@ -870,7 +1117,7 @@ $('uGo').onclick = async () => {
     }
     /* refuse to publish a no-op */
     if(ent.channel.best && ent.channel.best.ih === t.infoHash){
-      log('this HTML is already published as seq '+ent.channel.best.seq+' — change a byte first','w');
+      log('this content is already published as seq '+ent.channel.best.seq+' — change a byte first','w');
       $('uGo').disabled=false; return;
     }
     const seq = (ent.channel.best ? ent.channel.best.seq : 0) + 1;
@@ -879,7 +1126,7 @@ $('uGo').onclick = async () => {
     log('PUBLISHED seq '+seq+' → '+t.infoHash.slice(0,10)+'…','ok');
 
     dbPut({pubHex, seq, ih:t.infoHash, sig:rec.sig, k:pubHex,
-           name:'index.html', html, seen:Date.now()}).catch(e=>log('db: '+e.message,'w'));
+           name, bytes, mime, seen:Date.now()}).catch(e=>log('db: '+e.message,'w'));
 
     $('uResult').style.display='block';
     $('uIH').textContent=t.infoHash;
@@ -907,13 +1154,16 @@ async function refreshSavedList(){
   rows.sort((a,b)=>(b.seen||0)-(a.seen||0));
   const items = rows.map(r=>{
     const lbl = 'bep46:'+r.pubHex.slice(0,8)+'…'+r.pubHex.slice(-4);
+    const type = recordMime(r);
+    const bytes = recordBytes(r);
+    const size = bytes ? humanBytes(bytes.length) : '—';
     return `<div style="padding:4px 0">
       <a data-go="#/visit/${r.pubHex}">${lbl}</a>
-      <span style="color:var(--dim)"> · v${r.seq||'?'} · seen ${new Date(r.seen||0).toLocaleString()}</span>
+      <span style="color:var(--dim)"> · v${r.seq||'?'} · ${type} · ${size} · seen ${new Date(r.seen||0).toLocaleString()}</span>
     </div>`;
   }).join('');
   box.innerHTML = `<div style="margin-top:30px;border-top:1px solid var(--line);padding-top:18px">
-    <label>Pages you have visited (cached &amp; re-seeded)</label>${items}</div>`;
+    <label>Content you have visited (cached &amp; re-seeded)</label>${items}</div>`;
   box.querySelectorAll('a[data-go]').forEach(a=>{
     a.onclick = e => { e.preventDefault(); location.hash=a.dataset.go; };
   });
@@ -930,7 +1180,10 @@ async function refreshSavedList(){
     const ent=ensureActive(r.pubHex);
     const initial = {k:r.pubHex,seq:r.seq,ih:r.ih,sig:r.sig};
     ent.latestRec = initial;
-    ent.html=r.html;
+    const bytes = recordBytes(r);
+    const mime = recordMime(r);
+    const name = r.name || 'content.bin';
+    if(bytes){ ent.bytes=bytes; ent.mime=mime; ent.name=name; }
     /* rejoin channel quietly, seeded with the cached record */
     ent.channel = new Channel(r.pubHex,
       rec => {
@@ -941,16 +1194,17 @@ async function refreshSavedList(){
           const t = client.add(rec.ih,{announce:TRACKERS}, async torrent => {
             ent.content=torrent;
             try{
-              const html=await readTorrentHtml(torrent);
-              ent.html=html;
+              const got = await readTorrentFile(torrent);
+              ent.bytes=got.bytes; ent.mime=got.mime; ent.name=got.name;
               dbPut({pubHex:r.pubHex, seq:rec.seq, ih:rec.ih, sig:rec.sig, k:rec.k,
-                     name:(torrent.files[0]&&torrent.files[0].name)||'index.html',
-                     html, seen:Date.now()}).catch(()=>{});
+                     name:got.name, bytes:got.bytes, mime:got.mime, seen:Date.now()}).catch(()=>{});
               log('background: cached v'+rec.seq+' for '+r.pubHex.slice(0,10)+'…','ok');
               refreshSavedListSoon();
               /* if the user is currently looking at this page, refresh it */
               const m=(location.hash||'').match(/^#\/visit\/([0-9a-fA-F]{64})/);
-              if(m && m[1].toLowerCase()===r.pubHex) renderHtml(html);
+              if(m && m[1].toLowerCase()===r.pubHex){
+                renderPayload(got.bytes, got.mime, got.name);
+              }
             }catch(e){}
           });
         }
@@ -958,9 +1212,9 @@ async function refreshSavedList(){
       ()=>{},
       initial);
     /* attempt deterministic re-seed of the cached version */
-    if(r.html){
+    if(bytes){
       try{
-        const t = await seedHtml(r.html, r.name||'index.html');
+        const t = await seedFile(bytes, name, mime);
         if(t.infoHash===r.ih){
           ent.content=t;
           log('boot: re-seeding '+r.pubHex.slice(0,10)+'… v'+r.seq+' ('+t.infoHash.slice(0,10)+'…)','ok');
