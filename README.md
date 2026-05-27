@@ -5,7 +5,7 @@ A single HTML file ([`bep46-webrtc.html`](bep46-webrtc.html)) that runs in any
 modern browser — no install, no server, no build. Open it and you can publish
 a web page, visit someone else's page, or push an update to your own.
 
-[LIVE DEMO](https://htmlpreview.github.io/?https://github.com/mrmartin/bep46-webrtc/blob/main/bep46-webrtc.html)
+[LIVE DEMO](https://mrmartin.net/bep46-webrtc/bep46-webrtc.html)
 
 The wrapper turns the underlying `bep46:` address — an ed25519 public key — into
 something close to a URL. The bytes behind it are an HTML file, fetched over
