@@ -1,5 +1,7 @@
 # YOU ARE THE INTERNET
 
+## P2P webpage hosting in any browser, written 100% in javascript using torrents
+
 Serverless web pages. Addressed by a key, served by whoever has a tab open.
 A single HTML file ([`bep46-webrtc.html`](bep46-webrtc.html)) that runs in any
 modern browser — no install, no server, no build. Open it and you can publish
