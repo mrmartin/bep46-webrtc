@@ -9,6 +9,36 @@ a web page, visit someone else's page, or push an update to your own.
 
 [LIVE DEMO](https://mrmartin.net/bep46-webrtc/bep46-webrtc.html)
 
+## Example apps
+
+Things built on this network. None of them has a server behind it.
+
+### Swarm Registry — user accounts
+
+A user database with create account / sign in / change password / delete
+account, where the "database" is a set of signed records held by everyone
+who has the page open. Each account is an ed25519 keypair; the secret key is
+sealed under `scrypt(password)` and published in a signed record, so signing
+in means decrypting your own key locally and the password never leaves the
+device. Peers meet in a channel swarm (the same `sha1(…)` rendezvous trick as
+the page publisher) and merge records by owner-signed sequence number, so
+every peer converges on the same list whatever order things arrive in.
+
+![Swarm Registry: three accounts replicated between two browsers](accounts/docs/swarm-registry.png)
+
+```bash
+cd accounts && npm install
+npm run tracker &      # local ws:// tracker for development
+npm start              # http://127.0.0.1:8080/web/?tracker=ws://127.0.0.1:8000
+npm run test:all       # 28 tests: logic, real tracker + wires, two Chromium browsers over WebRTC
+```
+
+Code, record format, threat model and what it deliberately does not protect
+against: [`accounts/README.md`](accounts/README.md). `npm run build` there
+produces a single self-contained HTML file, which is exactly what the page
+publisher above takes as input — so the app and its user database can both
+live in the swarm.
+
 The wrapper turns the underlying `bep46:` address — an ed25519 public key — into
 something close to a URL. The bytes behind it are an HTML file, fetched over
 WebRTC and rendered in a sandboxed iframe. The key holder can re-point the

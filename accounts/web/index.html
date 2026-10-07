@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swarm Registry</title>
+<meta name="description" content="User accounts with no server: signed records replicated between everyone who has this page open.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='8' cy='10' r='4' fill='%231e7f74'/%3E%3Ccircle cx='24' cy='10' r='4' fill='%231e7f74'/%3E%3Ccircle cx='16' cy='24' r='4' fill='%231e7f74'/%3E%3Cpath d='M8 10L24 10L16 24Z' fill='none' stroke='%231e7f74' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css">
+<script src="../vendor/nacl-fast.min.js"></script>
+<script src="../vendor/scrypt.js"></script>
+</head>
+<body>
+<header class="masthead">
+  <div class="masthead-row">
+    <h1>Swarm Registry</h1>
+    <p class="standfirst">A list of accounts with no server behind it. Every open copy of this page holds the whole list, checks every entry's signature, and passes new entries on. Close them all and the list is only as durable as the last browser that saved it.</p>
+  </div>
+  <div class="swarm" id="swarm" aria-live="polite">
+    <span class="dot" id="swarm-dot" aria-hidden="true"></span>
+    <span id="swarm-text">Starting…</span>
+    <button type="button" class="link" id="settings-toggle" aria-expanded="false" aria-controls="settings">Trackers</button>
+  </div>
+  <form class="settings" id="settings" hidden>
+    <label for="trackers">Tracker addresses, one per line (wss://…). Peers meet through these; nothing else goes through them.</label>
+    <textarea id="trackers" rows="3" spellcheck="false"></textarea>
+    <div class="row">
+      <button type="submit">Reconnect</button>
+      <span class="hint" id="channel-hint"></span>
+    </div>
+  </form>
+</header>
+
+<main class="layout">
+  <section class="panel" id="account" aria-labelledby="account-heading">
+    <h2 id="account-heading" class="visually-hidden">Your account</h2>
+
+    <div id="signed-out">
+      <div class="tabs" role="tablist" aria-label="Sign in or register">
+        <button type="button" role="tab" id="tab-login" aria-selected="true" aria-controls="form-login">Sign in</button>
+        <button type="button" role="tab" id="tab-register" aria-selected="false" aria-controls="form-register">Register</button>
+      </div>
+
+      <form id="form-login" role="tabpanel" aria-labelledby="tab-login" autocomplete="on">
+        <label>Username <input name="username" id="login-username" autocomplete="username" required></label>
+        <label>Password <input name="password" id="login-password" type="password" autocomplete="current-password" required></label>
+        <button type="submit" id="login-submit">Sign in</button>
+        <p class="note">Signing in means unlocking your key with your password, here, on this device. The password is never sent anywhere.</p>
+      </form>
+
+      <form id="form-register" role="tabpanel" aria-labelledby="tab-register" hidden autocomplete="on">
+        <label>Username <input name="username" id="register-username" autocomplete="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{1,30}[A-Za-z0-9]"></label>
+        <label>Password <input name="password" id="register-password" type="password" autocomplete="new-password" required minlength="8"></label>
+        <label>Password again <input name="confirm" id="register-confirm" type="password" autocomplete="new-password" required minlength="8"></label>
+        <button type="submit" id="register-submit">Create account</button>
+        <p class="note">There is no password reset. Your account is a key sealed under this password; lose the password and the account is gone for good.</p>
+      </form>
+    </div>
+
+    <div id="signed-in" hidden>
+      <p class="whoami">Signed in as <strong id="me-username"></strong><br><span class="fp" id="me-fingerprint"></span></p>
+
+      <form id="form-password">
+        <h3>Change password</h3>
+        <label>Current password <input name="current" id="pw-current" type="password" autocomplete="current-password" required></label>
+        <label>New password <input name="next" id="pw-next" type="password" autocomplete="new-password" required minlength="8"></label>
+        <label>New password again <input name="confirm" id="pw-confirm" type="password" autocomplete="new-password" required minlength="8"></label>
+        <button type="submit" id="pw-submit">Change password</button>
+      </form>
+
+      <form id="form-delete">
+        <h3>Delete account</h3>
+        <p class="note">Publishes a signed deletion that every peer keeps, so the account cannot be brought back. Your username becomes free for someone else.</p>
+        <label>Password <input name="password" id="del-password" type="password" autocomplete="current-password" required></label>
+        <label class="check"><input type="checkbox" id="del-confirm" required> I understand this cannot be undone</label>
+        <button type="submit" class="danger" id="del-submit">Delete my account</button>
+      </form>
+
+      <button type="button" class="link" id="signout">Sign out</button>
+    </div>
+
+    <p class="message" id="message" role="status"></p>
+  </section>
+
+  <section class="panel ledger" aria-labelledby="ledger-heading">
+    <div class="ledger-head">
+      <h2 id="ledger-heading">Accounts in the swarm</h2>
+      <span class="count" id="ledger-count"></span>
+    </div>
+    <table id="ledger">
+      <thead>
+        <tr><th scope="col">Username</th><th scope="col">Key</th><th scope="col">Version</th><th scope="col">Registered</th><th scope="col">Last change</th></tr>
+      </thead>
+      <tbody id="ledger-body"></tbody>
+    </table>
+    <p class="empty" id="ledger-empty">No accounts here yet. Register the first one — every open copy of this page will carry it.</p>
+    <details id="tombstones" hidden>
+      <summary><span id="tombstone-count"></span> deleted</summary>
+      <ul id="tombstone-list"></ul>
+    </details>
+    <details class="log">
+      <summary>Activity</summary>
+      <ol id="log" reversed></ol>
+    </details>
+  </section>
+</main>
+
+<footer>
+  <p>Records are ed25519-signed; passwords are stretched with scrypt and never leave the device; peers meet through a WebTorrent tracker and talk over WebRTC. <a href="https://github.com/" id="source-link" hidden>Source</a></p>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
