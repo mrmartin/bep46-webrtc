@@ -17,7 +17,8 @@ export const DIRECTORY_CHANNEL_NAME = 'p2p-accounts/directory/v1';
 export const DIRECTORY_CHANNEL = sha1Hex(utf8(DIRECTORY_CHANNEL_NAME));
 
 export const DEFAULT_TRACKERS = [
-  'wss://tracker.openwebtorrent.com',
+  'wss://bot.martintech.co.uk',          // this project's own tracker (bittorrent-tracker behind nginx)
+  'wss://tracker.openwebtorrent.com',    // public fallbacks, often down
   'wss://tracker.webtorrent.dev',
 ];
 

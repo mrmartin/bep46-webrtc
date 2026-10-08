@@ -26,7 +26,7 @@ npm start                  # serves http://127.0.0.1:8080/web/
 
 Open `http://127.0.0.1:8080/web/?tracker=ws://127.0.0.1:8000` in two browser windows (two *profiles* or one normal + one private window, so they have separate storage). Register in one; the other lists the account within a second or two. Sign in there, change the password, go back to the first window: the old password no longer works.
 
-Against the public internet, drop the `?tracker=` parameter and the page uses the public `wss://` trackers listed in `src/transport-webtorrent.js` — or open **Trackers** in the page header and enter your own.
+Against the public internet, drop the `?tracker=` parameter and the page uses the default `wss://` trackers listed in `src/transport-webtorrent.js` (the project's own `wss://bot.martintech.co.uk` first, then the public ones) — or open **Trackers** in the page header and enter your own.
 
 ## What "account" means here
 

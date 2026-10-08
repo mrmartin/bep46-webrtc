@@ -181,7 +181,12 @@ no bundler, no backend.
 - **Not mainline-interoperable.** By construction — see Background.
 - **WebSocket trackers are scarce.** Browser WebTorrent needs `wss://`
   trackers for WebRTC signaling, and the public pool has thinned to almost
-  nothing. For real deployment, run your own (e.g. Novage's `wt-tracker`).
+  nothing. This project therefore runs its own, `wss://bot.martintech.co.uk`
+  (the stock [`bittorrent-tracker`](https://github.com/webtorrent/bittorrent-tracker)
+  package behind nginx; status at <https://bot.martintech.co.uk/>, numbers at
+  <https://bot.martintech.co.uk/stats>), and it is first in the default
+  tracker list, with the two public ones kept as fallbacks. To run your own,
+  see [`TRACKER.md`](TRACKER.md).
 - **Single-file HTML only.** The payload is one self-contained HTML — all
   CSS, JS, and assets must be inlined. No multi-file pages, no `<img src>`
   to local assets. (The underlying torrent can carry multiple files; the

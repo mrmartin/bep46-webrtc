@@ -291,7 +291,8 @@ if (typeof WebTorrent === 'undefined') {
 /* ───────────── shared helpers ───────────── */
 const $ = id => document.getElementById(id);
 const TRACKERS = [
-  'wss://tracker.openwebtorrent.com',
+  'wss://bot.martintech.co.uk',          // this project's own tracker (bittorrent-tracker behind nginx)
+  'wss://tracker.openwebtorrent.com',    // public fallbacks, often down
   'wss://tracker.webtorrent.dev'
 ];
 const enc = new TextEncoder(), dec = new TextDecoder();
