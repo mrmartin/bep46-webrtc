@@ -2,6 +2,7 @@
 // sample posts, members, a profile, sign in as a demo cat, read a friends-only
 // post, post, friend, poke, edit the profile, log out, check persistence.
 //   npm run build && npm run smoke
+import { JSDOM, VirtualConsole } from 'jsdom';
 import { readFileSync } from 'node:fs';
 const html = readFileSync(process.argv[2] || new URL('../../dist/index.html', import.meta.url), 'utf8');
 const vc = new VirtualConsole();
