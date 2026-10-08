@@ -39,6 +39,28 @@ produces a single self-contained HTML file, which is exactly what the page
 publisher above takes as input — so the app and its user database can both
 live in the swarm.
 
+### Catwalk — a 2004 social network
+
+[**Live: bot.martintech.co.uk/catwalk**](https://bot.martintech.co.uk/catwalk) —
+sign in as `mittens` (or any of the ten demo cats) with password `catnip2004`.
+
+A parody of the original facebook, for cats, built on the accounts layer:
+profiles with a little SVG cat, friend requests and confirmations, pokes, and
+posts to everyone or to friends only. Friends-only posts are encrypted to your
+friends with a per-author key that is re-issued when you unfriend someone, so
+the browsers that relay them cannot read them. The page ships with a sample
+network of ten cats, thirty posts and their friendships as real signed records,
+so the very first visitor sees a living site — and becomes one of the browsers
+that serves it.
+
+```bash
+cd catwalk && npm install
+npm test               # 13 tests: records, privacy, replication, the sample data
+npm run build          # dist/index.html — publish it with the page publisher above
+```
+
+Design, record format and the privacy model: [`catwalk/README.md`](catwalk/README.md).
+
 The wrapper turns the underlying `bep46:` address — an ed25519 public key — into
 something close to a URL. The bytes behind it are an HTML file, fetched over
 WebRTC and rendered in a sandboxed iframe. The key holder can re-point the

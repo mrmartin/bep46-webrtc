@@ -26,10 +26,10 @@ let html = readFileSync(r('web/index.html'), 'utf8');
 
 const inline = (code) => `<script>${code.replace(/<\/script/gi, '<\\/script')}</script>`;
 html = html
-  .replace('<link rel="stylesheet" href="app.css">', `<style>${css}</style>`)
-  .replace('<script src="../vendor/nacl-fast.min.js"></script>', inline(nacl))
-  .replace('<script src="../vendor/scrypt.js"></script>', inline(scrypt))
-  .replace('<script type="module" src="app.js"></script>', inline(js.outputFiles[0].text));
+  .replace('<link rel="stylesheet" href="app.css">', () => `<style>${css}</style>`)
+  .replace('<script src="../vendor/nacl-fast.min.js"></script>', () => inline(nacl))
+  .replace('<script src="../vendor/scrypt.js"></script>', () => inline(scrypt))
+  .replace('<script type="module" src="app.js"></script>', () => inline(js.outputFiles[0].text));
 
 mkdirSync(r('dist'), { recursive: true });
 writeFileSync(r('dist/index.html'), html);

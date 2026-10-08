@@ -9,6 +9,7 @@
 //   GET  /announce    classic HTTP announce (Node clients / curl tests)
 //   GET  /stats       bittorrent-tracker's stats page (/stats.json too)
 //   GET  /bep46-webrtc.html   the app from this checkout (uses this tracker by default)
+//   GET  /catwalk             the Catwalk example app (catwalk/dist/index.html, built by `npm run build` there)
 import { Server } from 'bittorrent-tracker';
 import { readFileSync } from 'node:fs';
 
@@ -16,6 +17,7 @@ const port = Number(process.argv[2] || process.env.PORT || 3000);
 const host = '0.0.0.0';
 const PUBLIC_WS = process.env.PUBLIC_WS || 'wss://bot.martintech.co.uk';
 const APP_HTML = new URL('../bep46-webrtc.html', import.meta.url);  // the app, one dir up
+const CATWALK_HTML = new URL('../catwalk/dist/index.html', import.meta.url);
 
 const server = new Server({
   udp: false,          // browsers cannot use it and the parent only forwards TCP
@@ -45,15 +47,16 @@ server.http.on('request', (req, res) => {
       'announce (http):             ' + PUBLIC_WS.replace(/^ws/, 'http') + '/announce',
       'stats:                       ' + PUBLIC_WS.replace(/^ws/, 'http') + '/stats',
       'app with this tracker:       ' + PUBLIC_WS.replace(/^ws/, 'http') + '/bep46-webrtc.html',
+      'catwalk (example app):       ' + PUBLIC_WS.replace(/^ws/, 'http') + '/catwalk',
       '',
       'swarms: ' + swarms + '   peers: ' + peers,
       '',
       'source: https://github.com/mrmartin/bep46-webrtc',
       '',
     ].join('\n'));
-  } else if (url.pathname === '/bep46-webrtc.html') {
+  } else if (url.pathname === '/bep46-webrtc.html' || url.pathname === '/catwalk' || url.pathname === '/catwalk/' || url.pathname === '/catwalk/index.html') {
     let html;
-    try { html = readFileSync(APP_HTML); }
+    try { html = readFileSync(url.pathname === '/bep46-webrtc.html' ? APP_HTML : CATWALK_HTML); }
     catch (e) {
       res.writeHead(404, { 'content-type': 'text/plain' });
       return res.end('app html not found: ' + e.message + '\n');

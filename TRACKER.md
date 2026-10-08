@@ -87,4 +87,6 @@ in the other, and watch the peer count go to 1.
 is `supervisord`'s `app` program there (`/app/run-app.sh` → this checkout's
 `tracker/tracker.js` on port 3000); the host's nginx terminates TLS and
 proxies to the container. `git pull` in `/app/bep46-webrtc` and
-`supervisorctl restart app` redeploys it.
+`supervisorctl restart app` redeploys it. The tracker also serves the Catwalk
+example app at `/catwalk` from `catwalk/dist/index.html`, so after pulling a
+Catwalk change run `npm install && npm run build` in `catwalk/` as well.

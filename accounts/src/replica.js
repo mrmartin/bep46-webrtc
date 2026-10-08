@@ -26,9 +26,12 @@ export const LIMITS = Object.freeze({
 });
 
 export class Replica {
-  constructor({ directory, transport, heartbeatMs = 15000, log = () => {} }) {
+  constructor({ directory, transport, heartbeatMs = 15000, log = () => {}, keyField = 'pk' }) {
     this.directory = directory;
     this.transport = transport;
+    // Which record field the directory is keyed by: 'pk' for the accounts
+    // Directory, 'id' for a catwalk-style Ledger. Digests are [[key, seq], …].
+    this.keyField = keyField;
     this.heartbeatMs = heartbeatMs;
     this.log = log;
     this._timer = null;
@@ -36,7 +39,7 @@ export class Replica {
     this._fanout = (record, { local }) => {
       // Re-gossip anything newly accepted, whether it came from the user or a peer.
       this.transport.broadcast({ t: 'update', record });
-      this.log(local ? 'published' : 'relayed', record.user, 'seq', record.seq);
+      this.log(local ? 'published' : 'relayed', record.user ?? record.id, 'seq', record.seq);
     };
   }
 
@@ -73,8 +76,9 @@ export class Replica {
         const n = this.directory.ingestAll(msg.records);
         if (msg.t === 'sync') {
           // Tell them what we have that they lack. Their sync already told us what they hold.
-          const theirs = new Map(msg.records.filter((r) => r && typeof r.pk === 'string').map((r) => [r.pk, r.seq]));
-          const newer = this.directory.all().filter((r) => (theirs.get(r.pk) ?? 0) < r.seq);
+          const k = this.keyField;
+          const theirs = new Map(msg.records.filter((r) => r && typeof r[k] === 'string').map((r) => [r[k], r.seq]));
+          const newer = this.directory.all().filter((r) => (theirs.get(r[k]) ?? 0) < r.seq);
           if (newer.length) send({ t: 'records', records: newer });
         }
         if (n) this.log('merged', n, 'record(s) from peer');
