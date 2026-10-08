@@ -63,7 +63,7 @@ What it does not do: hide *that* you posted (record metadata — who, when, how 
 - **replication** — three peers: profiles, a friend request and its confirmation, public and friends-only posts crossing the swarm; a late joiner receiving the whole ledger and signing in on it; a hostile peer that forges, replays and spams.
 - **seed** — the shipped sample data verifies record by record, loads into an empty node like gossip, every demo cat signs in with the demo password, and friends can read each other's friends-only posts.
 
-The browser end-to-end layer of `../accounts` (two Chromiums over WebRTC) is the model for testing the page itself; it is not wired up for Catwalk yet.
+`npm run smoke` (after `npm run build`) drives the **built page** in jsdom without a browser: the home page with sample posts, the members list, a profile, signing in as a demo cat, reading a friends-only post, posting, sending a friend request, poking, editing the profile, logging out (the friends-only post disappears) and persistence to `localStorage`. The real-browser layer of `../accounts` (two Chromiums over WebRTC) is the model for going further; it is not wired up for Catwalk yet.
 
 ## Deploying
 

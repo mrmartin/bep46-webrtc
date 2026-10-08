@@ -288,6 +288,7 @@ function render() {
 window.addEventListener('hashchange', () => { message = { text: '', kind: '' }; render(); window.scrollTo(0, 0); });
 
 // --- actions ----------------------------------------------------------------
+const field = (f, name) => f.elements.namedItem(name);
 async function run(fn, btn) {
   if (btn) { btn.disabled = true; }
   try { await fn(); } catch (e) {
@@ -325,28 +326,29 @@ document.addEventListener('submit', (ev) => {
   const btn = f.querySelector('button[type="submit"]');
   run(async () => {
     if (f.id === 'form-login') {
-      session = await accounts.login(f.username.value, f.password.value);
+      session = await accounts.login(field(f, 'username').value, field(f, 'password').value);
       app.unlock(session);
       try { app.reconcile(); } catch { /* ignore */ }
       if (!app.profile(session.pk)) { location.hash = '#/edit'; say('Welcome! Tell the other cats who you are.'); }
       else { location.hash = '#/'; say(`Signed in as ${app.displayName(session.pk)}.`); }
     } else if (f.id === 'form-register') {
-      if (f.password.value !== f.confirm.value) throw new CatwalkError('mismatch', 'The two passwords differ.');
-      session = await accounts.register(f.username.value, f.password.value);
+      if (field(f, 'password').value !== field(f, 'confirm').value) throw new CatwalkError('mismatch', 'The two passwords differ.');
+      session = await accounts.register(field(f, 'username').value, field(f, 'password').value);
       app.unlock(session);
-      app.setProfile({ name: f.name.value, fur: f.fur.value, eyes: f.eyes.value });
+      app.setProfile({ name: field(f, 'name').value, fur: field(f, 'fur').value, eyes: field(f, 'eyes').value });
       location.hash = '#/';
-      say(`Welcome to Catwalk, ${esc(f.name.value)}! Your account now lives in every open copy of this page.`);
+      say(`Welcome to Catwalk, ${esc(field(f, 'name').value)}! Your account now lives in every open copy of this page.`);
     } else if (f.id === 'form-post') {
-      app.post(f.text.value, f.aud.value);
+      const aud = field(f, 'aud').value;
+      app.post(field(f, 'text').value, aud);
       f.reset();
-      say(f.aud.value === 'public' ? 'Posted to everyone.' : 'Posted to your friends.');
+      say(aud === 'public' ? 'Posted to everyone.' : 'Posted to your friends.');
     } else if (f.id === 'form-profile') {
-      app.setProfile({ name: f.name.value, tagline: f.tagline.value, about: f.about.value, fur: f.fur.value, eyes: f.eyes.value });
+      app.setProfile({ name: field(f, 'name').value, tagline: field(f, 'tagline').value, about: field(f, 'about').value, fur: field(f, 'fur').value, eyes: field(f, 'eyes').value });
       location.hash = '#/profile/' + session.pk;
       say('Profile saved.');
     } else if (f.id === 'form-password') {
-      await accounts.changePassword(session, f.current.value, f.next.value);
+      await accounts.changePassword(session, field(f, 'current').value, field(f, 'next').value);
       f.reset();
       say('Password changed. Your key, friends and posts are unchanged.');
     }
@@ -355,7 +357,7 @@ document.addEventListener('submit', (ev) => {
 document.addEventListener('input', (ev) => {
   const f = ev.target.closest('#form-profile');
   if (!f || !session) return;
-  $('preview').innerHTML = catSvg({ fur: f.fur.value, eyes: f.eyes.value, seed: session.pk }, 120).replace('<svg ', '<svg class="avatar big" ');
+  $('preview').innerHTML = catSvg({ fur: field(f, 'fur').value, eyes: field(f, 'eyes').value, seed: session.pk }, 120).replace('<svg ', '<svg class="avatar big" ');
 });
 
 // --- boot -------------------------------------------------------------------
