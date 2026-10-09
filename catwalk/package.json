@@ -1,0 +1,18 @@
+{
+  "name": "catwalk",
+  "version": "0.1.0",
+  "description": "Catwalk: a 2004-style social network for cats with no server \u2014 accounts, friends and posts replicated between browsers over WebTorrent/WebRTC.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test test/unit/*.test.js",
+    "seed": "node tools/seed.js",
+    "build": "node tools/build.js",
+    "start": "node tools/serve.js",
+    "smoke": "node tools/dev/smoke-jsdom.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "jsdom": "^29.1.1"
+  }
+}

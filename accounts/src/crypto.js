@@ -46,6 +46,25 @@ export const secretbox = {
   OVERHEAD: 16,
 };
 
+// Public-key authenticated encryption (x25519 + xsalsa20-poly1305) and the
+// SHA-512 hash, for apps that need to seal something to a specific reader
+// (catwalk's friends-only posts). Not used by the accounts layer itself.
+export const box = {
+  keyPair() { need(); return nacl.box.keyPair(); },
+  fromSecretKey(sk) { need(); return nacl.box.keyPair.fromSecretKey(sk); },
+  seal(plain, nonce, theirPk, mySk) { need(); return nacl.box(plain, nonce, theirPk, mySk); },
+  open(boxed, nonce, theirPk, mySk) { need(); return nacl.box.open(boxed, nonce, theirPk, mySk); }, // null on failure
+  PUBLIC_KEY_LENGTH: 32,
+  SECRET_KEY_LENGTH: 32,
+  NONCE_LENGTH: 24,
+  OVERHEAD: 16,
+};
+
+export function hash(bytes) {
+  need();
+  return nacl.hash(bytes); // SHA-512, 64 bytes
+}
+
 // Password → 32-byte key. `params` is the public kdf block stored in the record.
 export async function deriveKey(password, params) {
   need();

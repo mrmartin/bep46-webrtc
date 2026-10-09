@@ -7,7 +7,10 @@ A single HTML file ([`bep46-webrtc.html`](bep46-webrtc.html)) that runs in any
 modern browser — no install, no server, no build. Open it and you can publish
 a web page, visit someone else's page, or push an update to your own.
 
-[LIVE DEMO](https://mrmartin.net/bep46-webrtc/bep46-webrtc.html)
+[LIVE DEMO](https://mrmartin.net/bep46-webrtc/bep46-webrtc.html) ·
+[**the site**](https://mrmartin.net/bep46-webrtc/) — landing page, publisher,
+Catwalk and Swarm Registry, all served by GitHub Pages straight from this
+repository (see [The website](#the-website)).
 
 ## Example apps
 
@@ -24,6 +27,8 @@ device. Peers meet in a channel swarm (the same `sha1(…)` rendezvous trick as
 the page publisher) and merge records by owner-signed sequence number, so
 every peer converges on the same list whatever order things arrive in.
 
+[**Live: mrmartin.net/bep46-webrtc/accounts**](https://mrmartin.net/bep46-webrtc/accounts/)
+
 ![Swarm Registry: three accounts replicated between two browsers](accounts/docs/swarm-registry.png)
 
 ```bash
@@ -38,6 +43,29 @@ against: [`accounts/README.md`](accounts/README.md). `npm run build` there
 produces a single self-contained HTML file, which is exactly what the page
 publisher above takes as input — so the app and its user database can both
 live in the swarm.
+
+### Catwalk — a 2004 social network
+
+[**Live: mrmartin.net/bep46-webrtc/catwalk**](https://mrmartin.net/bep46-webrtc/catwalk/)
+(also on the tracker host, <https://bot.martintech.co.uk/catwalk/>) —
+sign in as `mittens` (or any of the ten demo cats) with password `catnip2004`.
+
+A parody of the original facebook, for cats, built on the accounts layer:
+profiles with a little SVG cat, friend requests and confirmations, pokes, and
+posts to everyone or to friends only. Friends-only posts are encrypted to your
+friends with a per-author key that is re-issued when you unfriend someone, so
+the browsers that relay them cannot read them. The page ships with a sample
+network of ten cats, thirty posts and their friendships as real signed records,
+so the very first visitor sees a living site — and becomes one of the browsers
+that serves it.
+
+```bash
+cd catwalk && npm install
+npm test               # 13 tests: records, privacy, replication, the sample data
+npm run build          # dist/index.html — publish it with the page publisher above
+```
+
+Design, record format and the privacy model: [`catwalk/README.md`](catwalk/README.md).
 
 The wrapper turns the underlying `bep46:` address — an ed25519 public key — into
 something close to a URL. The bytes behind it are an HTML file, fetched over
@@ -181,7 +209,12 @@ no bundler, no backend.
 - **Not mainline-interoperable.** By construction — see Background.
 - **WebSocket trackers are scarce.** Browser WebTorrent needs `wss://`
   trackers for WebRTC signaling, and the public pool has thinned to almost
-  nothing. For real deployment, run your own (e.g. Novage's `wt-tracker`).
+  nothing. This project therefore runs its own, `wss://bot.martintech.co.uk`
+  (the stock [`bittorrent-tracker`](https://github.com/webtorrent/bittorrent-tracker)
+  package behind nginx; status at <https://bot.martintech.co.uk/status>, numbers at
+  <https://bot.martintech.co.uk/stats>), and it is first in the default
+  tracker list, with the two public ones kept as fallbacks. To run your own,
+  see [`TRACKER.md`](TRACKER.md).
 - **Single-file HTML only.** The payload is one self-contained HTML — all
   CSS, JS, and assets must be inlined. No multi-file pages, no `<img src>`
   to local assets. (The underlying torrent can carry multiple files; the
@@ -191,6 +224,31 @@ no bundler, no backend.
   for our inputs. The wrapper checks the resulting infohash against the
   cached one and only keeps the seed if they match; otherwise it logs a
   warning and skips.
+
+## The website
+
+<https://mrmartin.net/bep46-webrtc/> is GitHub Pages serving the `main` branch
+of this repository exactly as it is. [`index.html`](index.html) is the landing
+page, and everything it links to is a plain file in this tree:
+
+| URL | What |
+|---|---|
+| `/` | the landing page, [`index.html`](index.html) |
+| `/bep46-webrtc.html` | the page publisher |
+| `/catwalk/` | Catwalk — [`catwalk/index.html`](catwalk/index.html) forwards to [`catwalk/web/`](catwalk/web/) |
+| `/accounts/` | the Swarm Registry — [`accounts/index.html`](accounts/index.html) forwards to [`accounts/web/`](accounts/web/) |
+
+There is no build step and no CI: the apps load their ES modules and the
+vendored libraries straight from the checkout (the same way `npm start` serves
+them for development), and `.nojekyll` keeps GitHub from running the tree
+through Jekyll. The landing page makes one network request of its own, to the
+tracker's `/stats.json`, for the live peer count.
+
+To get your own copy, fork the repository and switch on Pages in the fork:
+**Settings → Pages → Deploy from a branch → `main`, `/ (root)`**. Any other
+static host works the same way. The project's tracker host serves the same
+tree at <https://bot.martintech.co.uk/>, with the built single-file apps at
+`/catwalk/` and `/accounts/`.
 
 ## License
 
