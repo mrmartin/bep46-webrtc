@@ -10,7 +10,7 @@ Applications built on this layer. Each one is a static page: no backend, no data
 
 | App | What it shows | Where |
 |---|---|---|
-| **Swarm Registry** | The reference app. Register, sign in, change password and delete an account, and watch the directory fill in live from other peers. Shows every account's key fingerprint, flags names claimed by more than one key, keeps a visible list of tombstones, and has an activity log of the gossip underneath. Works with the public trackers out of the box or with your own (header → Trackers). | `web/` — run with `npm start`, or `npm run build` for a single-file `dist/index.html` you can publish into a swarm |
+| **Swarm Registry** | The reference app. Register, sign in, change password and delete an account, and watch the directory fill in live from other peers. Shows every account's key fingerprint, flags names claimed by more than one key, keeps a visible list of tombstones, and has an activity log of the gossip underneath. Works with the public trackers out of the box or with your own (header → Trackers). | **live: <https://mrmartin.net/bep46-webrtc/accounts/>** · `web/` — run with `npm start`, or `npm run build` for a single-file `dist/index.html` you can publish into a swarm |
 
 ![Swarm Registry — two browsers on one swarm, one signed in as bob.builder, three accounts replicated](docs/swarm-registry.png)
 

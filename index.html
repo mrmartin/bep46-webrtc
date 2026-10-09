@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>You own the internet — bep46-webrtc</title>
+<meta name="description" content="Web pages that live in the browsers of the people reading them. Publish a page, run a social network, keep user accounts: no server, no host, nothing to install.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#0b1220">
+<link rel="canonical" href="https://mrmartin.net/bep46-webrtc/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mrmartin.net/bep46-webrtc/">
+<meta property="og:title" content="You own the internet">
+<meta property="og:description" content="Web pages that live in the browsers of the people reading them. No server, no host, no one to switch them off.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1220'/%3E%3Cpath d='M8 10L24 10L16 24Z' fill='none' stroke='%232fd3bd' stroke-width='2'/%3E%3Ccircle cx='8' cy='10' r='3.5' fill='%232fd3bd'/%3E%3Ccircle cx='24' cy='10' r='3.5' fill='%232fd3bd'/%3E%3Ccircle cx='16' cy='24' r='3.5' fill='%23f0a13c'/%3E%3C/svg%3E">
+<!--
+  The project site. GitHub Pages serves this repository's main branch as it is,
+  so this file is https://mrmartin.net/bep46-webrtc/ and every link below is a
+  plain file in the same tree: no build step, no bundler, no CDN. The only
+  network request this page makes on its own is the tracker's stats counter.
+-->
+<style>
+:root {
+  --bg: #fbfaf6; --surface: #ffffff; --surface-2: #f1efe8; --ink: #14171c; --ink-2: #4f5661; --rule: #dcd9cf;
+  --navy: #0b1220; --navy-2: #0f172a; --navy-rule: #1f2a40; --on-navy: #eef2f7; --on-navy-2: #9aa7bb;
+  --teal: #2fd3bd; --teal-ink: #0f6e62; --teal-soft: rgba(47, 211, 189, 0.16);
+  --amber: #f0a13c; --amber-hover: #ffb554; --amber-ink: #1a1206;
+  --blue: #3b5998; --focus: #2f6fed;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --wrap: 1120px; --gutter: 20px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1420; --surface: #141c2b; --surface-2: #182236; --ink: #e8ecf3; --ink-2: #a6b0c0; --rule: #26324a;
+    --teal-ink: #5fe3cf; --teal-soft: rgba(47, 211, 189, 0.14);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1420; --surface: #141c2b; --surface-2: #182236; --ink: #e8ecf3; --ink-2: #a6b0c0; --rule: #26324a;
+  --teal-ink: #5fe3cf; --teal-soft: rgba(47, 211, 189, 0.14);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+img, svg { max-width: 100%; }
+code, pre { font-family: var(--mono); }
+.wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 var(--gutter); width: 100%; }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.skip { position: absolute; left: -999px; top: 0; background: var(--amber); color: var(--amber-ink); padding: .6rem 1rem; z-index: 10; }
+.skip:focus { left: 1rem; top: 1rem; }
+
+/* Hero ------------------------------------------------------------------ */
+.hero { position: relative; isolation: isolate; display: flex; flex-direction: column; min-height: 92vh; background: var(--navy); color: var(--on-navy); overflow: hidden; }
+.hero canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+.hero::after { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(55% 65% at 28% 55%, rgba(11, 18, 32, 0.78), rgba(11, 18, 32, 0.25) 60%, rgba(11, 18, 32, 0) 100%),
+              linear-gradient(to bottom, rgba(11, 18, 32, 0) 70%, var(--navy) 100%); }
+.nav { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 1rem 2rem; flex-wrap: wrap; padding-top: 1.3rem; padding-bottom: 1.3rem; }
+.brand { font-family: var(--mono); font-weight: 600; letter-spacing: 0.01em; text-decoration: none; color: #fff; display: inline-flex; align-items: center; gap: .55rem; }
+.brand svg { width: 22px; height: 22px; }
+.nav ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 1.4rem; flex-wrap: wrap; font-size: .95rem; }
+.nav a { color: var(--on-navy); text-decoration: none; opacity: .82; }
+.nav a:hover { opacity: 1; text-decoration: underline; text-underline-offset: 4px; }
+.hero-inner { position: relative; z-index: 1; flex: 1; display: flex; flex-direction: column; justify-content: center; padding-top: 3rem; padding-bottom: 5rem; }
+.kicker { font-family: var(--mono); font-size: .85rem; letter-spacing: .12em; text-transform: uppercase; color: var(--teal); margin: 0 0 1.2rem; }
+h1 { font-size: clamp(3.1rem, 9.5vw, 7.2rem); line-height: .95; letter-spacing: -.035em; font-weight: 800; margin: 0 0 1.3rem; max-width: 12ch; color: #fff; }
+.lede { font-size: clamp(1.1rem, 2vw, 1.4rem); line-height: 1.45; max-width: 36ch; margin: 0 0 2.2rem; color: #c9d3e3; }
+.cta { display: flex; flex-wrap: wrap; gap: .8rem 1rem; align-items: center; }
+.btn { display: inline-flex; align-items: center; gap: .55rem; padding: .95rem 1.6rem; border-radius: 999px; font-weight: 600; font-size: 1.05rem; text-decoration: none; border: 2px solid transparent; transition: transform .15s ease, background .15s ease, border-color .15s ease; }
+.btn:hover { transform: translateY(-1px); }
+.btn svg { width: 18px; height: 18px; }
+.btn-primary { background: var(--amber); color: var(--amber-ink); }
+.btn-primary:hover { background: var(--amber-hover); }
+.btn-ghost { border-color: rgba(255, 255, 255, .38); color: #fff; }
+.btn-ghost:hover { border-color: #fff; background: rgba(255, 255, 255, .07); }
+.btn-dark { background: var(--ink); color: var(--bg); }
+.btn-dark:hover { background: var(--ink-2); }
+.hint { margin: 1.1rem 0 0; font-size: .95rem; color: var(--on-navy-2); }
+.live { margin: 2.2rem 0 0; font-family: var(--mono); font-size: .85rem; color: var(--on-navy-2); display: flex; gap: .65rem; align-items: center; }
+.live[hidden] { display: none; }
+.pulse { width: .6rem; height: .6rem; border-radius: 50%; background: var(--teal); box-shadow: 0 0 0 0 rgba(47, 211, 189, .7); animation: pulse 2.2s infinite; flex: none; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(47, 211, 189, .7); } 70% { box-shadow: 0 0 0 9px rgba(47, 211, 189, 0); } 100% { box-shadow: 0 0 0 0 rgba(47, 211, 189, 0); } }
+
+/* Sections --------------------------------------------------------------- */
+.block { padding: 5.5rem 0; }
+.block h2 { font-size: clamp(1.9rem, 4vw, 2.8rem); letter-spacing: -.025em; line-height: 1.1; margin: 0 0 .7rem; font-weight: 800; }
+.block .sub { color: var(--ink-2); font-size: 1.15rem; max-width: 62ch; margin: 0 0 2.6rem; }
+.alt { background: var(--surface-2); }
+
+.features { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1.4rem; }
+.feature { background: var(--surface); border: 1px solid var(--rule); border-radius: 16px; padding: 1.6rem; }
+.feature h3 { margin: 0 0 .45rem; font-size: 1.15rem; letter-spacing: -.01em; }
+.feature p { margin: 0; color: var(--ink-2); font-size: .98rem; }
+.icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--teal-soft); color: var(--teal-ink); margin-bottom: 1rem; }
+.icon svg { width: 24px; height: 24px; }
+
+.apps { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.6rem; }
+.app { border-radius: 18px; overflow: hidden; background: var(--surface); border: 1px solid var(--rule); display: flex; flex-direction: column; }
+.app-head { padding: 1rem 1.4rem; color: #fff; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.app-head.catwalk { background: var(--blue); font: bold 22px Verdana, Tahoma, Arial, sans-serif; letter-spacing: -1px; }
+.app-head.publisher { background: #0c0d10; color: var(--amber); font-family: var(--mono); font-weight: 600; }
+.app-head.registry { background: #1e7f74; font-family: Charter, "Iowan Old Style", "Palatino Linotype", Georgia, serif; font-size: 1.35rem; font-weight: 500; }
+.badge { font: 600 .72rem/1 var(--sans); letter-spacing: .08em; text-transform: uppercase; padding: .4rem .6rem; border-radius: 999px; background: rgba(255, 255, 255, .16); color: #fff; white-space: nowrap; }
+.app-body { padding: 1.4rem; display: flex; flex-direction: column; gap: 1rem; flex: 1; }
+.app-body p { margin: 0; color: var(--ink-2); }
+.app-body .meta { font-size: .9rem; }
+.app-body .meta code { background: var(--surface-2); padding: .1em .4em; border-radius: 4px; font-size: .9em; color: var(--ink); }
+.app .btn { align-self: flex-start; margin-top: auto; }
+.cats { display: flex; flex-wrap: wrap; gap: .35rem; min-height: 46px; }
+.cat { width: 46px; height: 46px; border-radius: 50%; background: #eef0f5; display: grid; place-items: center; overflow: hidden; border: 1px solid #d8dfea; }
+.cat svg { width: 40px; height: 40px; }
+.mock { font-family: var(--mono); font-size: .78rem; line-height: 1.7; background: #0c0d10; color: #e9e6dd; border: 1px solid #23252e; border-radius: 10px; padding: .9rem 1rem; overflow: hidden; }
+.mock .addr { color: var(--amber); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.mock .dim { color: #7e8088; }
+.mock .ok { color: #7fd17a; border: 1px solid #2e5a2c; border-radius: 4px; padding: 0 .4em; }
+.mock .pill { border: 1px solid #23252e; border-radius: 4px; padding: 0 .4em; color: #b8b5ac; }
+.shot { width: 100%; height: auto; border: 1px solid var(--rule); border-radius: 10px; display: block; }
+
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1.6rem 2rem; }
+.step .n { font-family: var(--mono); color: var(--teal-ink); font-weight: 700; font-size: .85rem; letter-spacing: .12em; }
+.step h3 { font-size: 1.2rem; margin: .45rem 0 .4rem; letter-spacing: -.01em; }
+.step p { margin: 0; color: var(--ink-2); font-size: .98rem; }
+.step code, .record p code { font-size: .86em; background: var(--surface); border: 1px solid var(--rule); padding: .08em .35em; border-radius: 4px; }
+.record { margin-top: 2.6rem; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 1.4rem 2.5rem; align-items: center; }
+.record p { margin: 0; color: var(--ink-2); }
+pre { margin: 0; background: var(--navy-2); color: #dbe3ef; border: 1px solid var(--navy-rule); border-radius: 12px; padding: 1.15rem 1.3rem; overflow: auto; font-size: .82rem; line-height: 1.6; }
+pre .k { color: #7fd1c6; } pre .s { color: #f4c37a; } pre .c { color: #7f8ba3; } pre .p { color: #c9d3e3; }
+
+.build { background: var(--navy); color: var(--on-navy); }
+.build h2 { color: #fff; }
+.build .sub { color: var(--on-navy-2); }
+.build-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 2.5rem 3rem; align-items: start; }
+.build pre { background: #070c16; }
+.build .caption { font-size: .92rem; color: var(--on-navy-2); margin: .9rem 0 0; }
+.build .caption code { color: #dbe3ef; }
+.links { list-style: none; margin: 0; padding: 0; display: grid; gap: 1.1rem; }
+.links a { color: #fff; font-weight: 600; text-decoration: none; }
+.links a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.links span { display: block; color: var(--on-navy-2); font-size: .95rem; }
+.fork { margin-top: 2.6rem; padding: 1.4rem 1.5rem; border: 1px solid var(--navy-rule); border-radius: 14px; background: rgba(255, 255, 255, .03); }
+.fork h3 { margin: 0 0 .6rem; font-size: 1.1rem; }
+.fork ol { margin: 0; padding-left: 1.3rem; color: var(--on-navy-2); display: grid; gap: .35rem; }
+.fork ol code, .fork p code { color: #dbe3ef; }
+.fork p { margin: .8rem 0 0; color: var(--on-navy-2); font-size: .95rem; }
+.fork a { color: #fff; }
+
+.fine { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.6rem 2rem; }
+.fine h3 { font-size: 1.05rem; margin: 0 0 .35rem; }
+.fine p { margin: 0; color: var(--ink-2); font-size: .96rem; }
+.fine a { color: var(--ink); }
+
+footer { border-top: 1px solid var(--rule); padding: 2rem 0 3rem; color: var(--ink-2); font-size: .9rem; }
+.foot { display: flex; flex-wrap: wrap; gap: 1rem 2rem; justify-content: space-between; align-items: baseline; }
+.foot ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 1.4rem; flex-wrap: wrap; }
+.foot p { margin: 0; max-width: 60ch; }
+
+@media (max-width: 860px) {
+  .build-grid, .record { grid-template-columns: 1fr; }
+  .block { padding: 4rem 0; }
+  .hero { min-height: 0; }
+  .hero-inner { padding-top: 3rem; padding-bottom: 4rem; }
+}
+@media (max-width: 480px) {
+  .nav ul { gap: 1rem; font-size: .9rem; }
+  .btn { width: 100%; justify-content: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .pulse { animation: none; }
+  .btn, .btn:hover { transition: none; transform: none; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<section class="hero" id="top">
+  <canvas id="swarm" aria-hidden="true"></canvas>
+  <nav class="wrap nav" aria-label="Site">
+    <a class="brand" href="#top" aria-label="bep46-webrtc, home">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 10L24 10L16 24Z" fill="none" stroke="#2fd3bd" stroke-width="2"/><circle cx="8" cy="10" r="3.5" fill="#2fd3bd"/><circle cx="24" cy="10" r="3.5" fill="#2fd3bd"/><circle cx="16" cy="24" r="3.5" fill="#f0a13c"/></svg>
+      bep46-webrtc
+    </a>
+    <ul>
+      <li><a href="#apps">Apps</a></li>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#build">Build on it</a></li>
+      <li><a href="https://github.com/mrmartin/bep46-webrtc">GitHub</a></li>
+    </ul>
+  </nav>
+  <div class="wrap hero-inner">
+    <p class="kicker">Peer-to-peer web pages · in the browser you already have</p>
+    <h1>You own the internet.</h1>
+    <p class="lede">Web pages that live in the browsers of the people reading them. No server, no hosting bill, no one who can switch them off. Open a page, and you are one of the computers serving it.</p>
+    <div class="cta">
+      <a class="btn btn-primary" href="catwalk/">Open Catwalk
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+      <a class="btn btn-ghost" href="bep46-webrtc.html">Publish a page</a>
+    </div>
+    <p class="hint">Nothing to install. Works in any modern browser.</p>
+    <p class="live" id="live" hidden><span class="pulse" aria-hidden="true"></span><span id="live-text"></span></p>
+  </div>
+</section>
+
+<main id="main">
+
+<section class="block" id="why">
+  <div class="wrap">
+    <h2>Not a cloud. A crowd.</h2>
+    <p class="sub">A normal website is a computer somebody else owns. These pages are different: the address is a key, the hosts are the readers, and the only fixed point is a tracker whose entire job is to introduce browsers to each other.</p>
+    <div class="features">
+      <div class="feature">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="3.6"/><path d="M10.4 12.6L20 3M16.2 6.8l2.6 2.6M13.2 9.8l2.6 2.6"/></svg></div>
+        <h3>Addressed by a key</h3>
+        <p>A page's address is an ed25519 public key. Only the holder of the matching secret can publish to it; everybody else can verify that what arrived is what was signed.</p>
+      </div>
+      <div class="feature">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="7" r="2.5"/><circle cx="19" cy="7" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7.5 7h9M6.3 9.2l4.5 6.5M17.7 9.2l-4.5 6.5"/></svg></div>
+        <h3>Served by its readers</h3>
+        <p>Every visitor seeds what they just read, and seeds it again on every return. Close the author's laptop and the page stays up for as long as one tab, anywhere, is open.</p>
+      </div>
+      <div class="feature">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11A8 8 0 0 0 5.6 6.6L4 8M4 3v5h5M4 13a8 8 0 0 0 14.4 4.4L20 16M20 21v-5h-5"/></svg></div>
+        <h3>Updatable</h3>
+        <p>Publish version two to the same address. The signed pointer is gossiped every three seconds, so everyone watching picks it up almost at once, and an older version can never be replayed.</p>
+      </div>
+      <div class="feature">
+        <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18M6.5 6.6h.01M9.5 6.6h.01"/></svg></div>
+        <h3>Nothing to install</h3>
+        <p>One HTML file in any modern browser. WebRTC carries the data between browsers; a WebSocket tracker only introduces them. Content never passes through a server.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block alt" id="apps">
+  <div class="wrap">
+    <h2>Three things with no server behind them</h2>
+    <p class="sub">Open any of them in two browsers, or on two devices, and watch them find each other.</p>
+    <div class="apps">
+      <article class="app">
+        <div class="app-head catwalk"><span>[catwalk]</span><span class="badge">social network</span></div>
+        <div class="app-body">
+          <p>The original 2004 social network, rebuilt for cats. Profiles, friend requests, pokes, and posts to everyone or to friends only. Friends-only posts are encrypted to your friends, so the browsers relaying them cannot read them.</p>
+          <div class="cats" id="cats" aria-label="The ten cats already living there"></div>
+          <p class="meta">Ten cats are already there. Sign in as <code>mittens</code> with the password <code>catnip2004</code>, or register your own.</p>
+          <a class="btn btn-dark" href="catwalk/">Open Catwalk</a>
+        </div>
+      </article>
+      <article class="app">
+        <div class="app-head publisher"><span>bep46-webrtc</span><span class="badge">page publisher</span></div>
+        <div class="app-body">
+          <p>Pick a self-contained HTML file and get a <code>bep46:</code> address to share and a secret key to keep. Visit anyone's address and you become one of its hosts. Update yours whenever you like; readers refresh within a heartbeat.</p>
+          <div class="mock" aria-hidden="true">
+            <span class="dim">address to follow</span>
+            <span class="addr">bep46:76b64df4e8b976d55fe09c0e42aa764191968398eb7935e7df19749214ca5960</span>
+            <span class="dim">current version</span> <strong style="color:#7fd17a">v2</strong> &nbsp;<span class="pill">channel 3 peers</span> <span class="ok">ready</span>
+          </div>
+          <p class="meta">Two strings and no account: the address is the public key, the secret key is the only thing that can publish to it.</p>
+          <a class="btn btn-dark" href="bep46-webrtc.html">Open the publisher</a>
+        </div>
+      </article>
+      <article class="app">
+        <div class="app-head registry"><span>Swarm Registry</span><span class="badge">user accounts</span></div>
+        <div class="app-body">
+          <p>Create account, sign in, change password, delete: a user database with no database server. Each account is a keypair sealed under your password and published as a signed record. Signing in means decrypting your own key, locally; the password never leaves the device.</p>
+          <img class="shot" src="accounts/docs/swarm-registry.png" width="1280" height="1275" loading="lazy" alt="Swarm Registry: two browsers on one swarm, one signed in as bob.builder, three accounts replicated">
+          <p class="meta">The layer Catwalk is built on. Forty lines wire it into any page.</p>
+          <a class="btn btn-dark" href="accounts/">Open the registry</a>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="how">
+  <div class="wrap">
+    <h2>How a page with no server works</h2>
+    <p class="sub">The semantics of <a href="https://bittorrent.org/beps/bep_0046.html">BEP 46</a>, signed, owner-only, sequence-numbered updates, with the one piece a browser cannot have, the BitTorrent DHT, replaced by a WebRTC rendezvous swarm.</p>
+    <div class="steps">
+      <div class="step"><div class="n">01</div><h3>A file becomes a torrent</h3><p>One self-contained HTML file is seeded over WebTorrent. Its infohash is the fingerprint of its exact contents.</p></div>
+      <div class="step"><div class="n">02</div><h3>A key becomes an address</h3><p>The owner signs a tiny pointer, sequence number plus infohash, with an ed25519 key. The public key is the address: <code>bep46:&lt;64 hex&gt;</code>.</p></div>
+      <div class="step"><div class="n">03</div><h3>Peers meet at sha1(key)</h3><p>Everyone interested in an address joins a WebTorrent swarm named after the key. A WebSocket tracker introduces them; from then on they talk directly over WebRTC.</p></div>
+      <div class="step"><div class="n">04</div><h3>Readers become hosts</h3><p>The pointer is gossiped every three seconds. Each browser fetches the bytes from whoever has them, verifies them, renders them in a sandboxed frame, caches them, and seeds them again on every visit.</p></div>
+    </div>
+    <div class="record">
+<pre><span class="p">{</span>
+  <span class="k">"k"</span>:   <span class="s">"&lt;64-hex ed25519 public key&gt;"</span>,   <span class="c">// the address</span>
+  <span class="k">"seq"</span>: 3,                                <span class="c">// strictly increasing</span>
+  <span class="k">"ih"</span>:  <span class="s">"&lt;40-hex infohash&gt;"</span>,             <span class="c">// the current bytes</span>
+  <span class="k">"sig"</span>: <span class="s">"&lt;128-hex signature over seq‖ih&gt;"</span>
+<span class="p">}</span></pre>
+      <p>The whole protocol fits in this record. Peers drop any pointer whose signature does not verify under <code>k</code>, and any whose <code>seq</code> is not greater than the one they already hold. The accounts and the social network use the same idea with richer records: per key, the highest sequence number wins, and deletions are tombstones that stay.</p>
+    </div>
+  </div>
+</section>
+
+<section class="block build" id="build">
+  <div class="wrap">
+    <h2>Build on it</h2>
+    <p class="sub">Everything here is plain files. Fork the repository, switch on GitHub Pages, and you have your own copy of this site, the publisher, Catwalk and the registry. No build step, no CI, nothing to deploy.</p>
+    <div class="build-grid">
+      <div>
+<pre><span class="k">import</span> WebTorrent <span class="k">from</span> <span class="s">'./accounts/vendor/webtorrent.min.js'</span>;
+<span class="k">import</span> { configureBrowser } <span class="k">from</span> <span class="s">'./accounts/src/env-browser.js'</span>;
+<span class="k">import</span> { Directory, webStorageStore } <span class="k">from</span> <span class="s">'./accounts/src/directory.js'</span>;
+<span class="k">import</span> { Accounts } <span class="k">from</span> <span class="s">'./accounts/src/accounts.js'</span>;
+<span class="k">import</span> { Replica } <span class="k">from</span> <span class="s">'./accounts/src/replica.js'</span>;
+<span class="k">import</span> { WebTorrentTransport } <span class="k">from</span> <span class="s">'./accounts/src/transport-webtorrent.js'</span>;
+
+configureBrowser();                        <span class="c">// nacl + scrypt, from the two vendored scripts</span>
+<span class="k">const</span> directory = <span class="k">new</span> Directory({ store: webStorageStore(localStorage) });
+<span class="k">const</span> accounts  = <span class="k">new</span> Accounts({ directory });
+<span class="k">const</span> transport = <span class="k">new</span> WebTorrentTransport({ client: <span class="k">new</span> WebTorrent({ dht: <span class="k">false</span>, lsd: <span class="k">false</span> }) });
+<span class="k">new</span> Replica({ directory, transport }).start();   <span class="c">// gossip with every open copy of the page</span>
+
+<span class="k">await</span> accounts.register(<span class="s">'mittens'</span>, <span class="s">'catnip2004'</span>);
+<span class="k">const</span> me = <span class="k">await</span> accounts.login(<span class="s">'mittens'</span>, <span class="s">'catnip2004'</span>);   <span class="c">// decrypts the key, locally</span></pre>
+        <p class="caption">That is the whole Swarm Registry, minus the HTML. The directory is a replicated map that converges whatever order records arrive in; the replica gossips it as a BEP-10 extension; the transport is a WebTorrent swarm that carries no torrent at all. Catwalk adds a second map keyed by record id, and gets a social network.</p>
+      </div>
+      <div>
+        <ul class="links">
+          <li><a href="https://github.com/mrmartin/bep46-webrtc#readme">The design</a><span>The protocol, the trust model, what you can do from the publisher and what it cannot do.</span></li>
+          <li><a href="https://github.com/mrmartin/bep46-webrtc/tree/main/accounts#readme">accounts/</a><span>The record format, the merge rule, the gossip protocol, and a threat model that says exactly what it does not protect against.</span></li>
+          <li><a href="https://github.com/mrmartin/bep46-webrtc/tree/main/catwalk#readme">catwalk/</a><span>The social records, friends-only encryption with epochs and a key chain, and how the sample network is generated.</span></li>
+          <li><a href="https://github.com/mrmartin/bep46-webrtc/blob/main/TRACKER.md">TRACKER.md</a><span>Run your own tracker: the stock bittorrent-tracker package behind nginx, with the exact config and a protocol test.</span></li>
+          <li><a href="https://github.com/mrmartin/bep46-webrtc/tree/main/accounts#tests">Tests</a><span><code>npm test</code> in <code>accounts/</code> and <code>catwalk/</code>; the swarm and browser suites drive a real tracker and two Chromium browsers over WebRTC.</span></li>
+        </ul>
+        <div class="fork">
+          <h3>Your own copy, three steps</h3>
+          <ol>
+            <li>Fork <a href="https://github.com/mrmartin/bep46-webrtc">mrmartin/bep46-webrtc</a>.</li>
+            <li>In the fork: <strong>Settings → Pages → Deploy from a branch → <code>main</code>, <code>/ (root)</code></strong>.</li>
+            <li>Open <code>https://&lt;you&gt;.github.io/bep46-webrtc/</code>.</li>
+          </ol>
+          <p>Point it at your own tracker with <code>?tracker=wss://…</code>, or from the Trackers box inside each app.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="fine">
+  <div class="wrap">
+    <h2>The fine print</h2>
+    <p class="sub">A network with no server has no one to lie for it. These are the limits, straight from the <a href="https://github.com/mrmartin/bep46-webrtc/tree/main/accounts#what-this-does-not-protect-against--read-before-relying-on-it">README</a>.</p>
+    <div class="fine">
+      <div><h3>Durability is social</h3><p>A page or a record exists for as long as someone who has it comes back online, and browsers evict storage. If you need more, keep one always-on headless replica: it is a mirror, not an authority, and cannot forge or roll anything back.</p></div>
+      <div><h3>Passwords can be guessed offline</h3><p>A sealed key is public by construction. scrypt at 2<sup>15</sup> makes every guess cost 32 MiB of memory, which turns a short password into a lost account, not a safe one. There is no reset, because nobody holds anything that could reset it.</p></div>
+      <div><h3>Trackers are the fixed point</h3><p>Browsers cannot find each other on their own; a WebSocket tracker introduces them. The project runs its own and every app lets you enter yours. The tracker sees an infohash and a WebRTC offer, never content.</p></div>
+      <div><h3>Not mainline BitTorrent</h3><p>It keeps the semantics of BEP 46, not the wire format of the DHT, so it does not interoperate with mainline clients. It is a network among the browsers running these pages.</p></div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <p>MIT licensed. This page is served by GitHub Pages straight from the repository, and the only thing it talks to is the tracker's status counter.</p>
+    <ul>
+      <li><a href="https://github.com/mrmartin/bep46-webrtc">GitHub</a></li>
+      <li><a href="https://bot.martintech.co.uk/status">Tracker status</a></li>
+      <li><a href="https://bot.martintech.co.uk/stats">Live swarms</a></li>
+    </ul>
+  </div>
+</footer>
+
+<script>
+// The swarm behind the headline: browsers drifting about, links between the
+// ones that can see each other, and the odd amber packet of gossip travelling
+// along a link. Your pointer is a peer too. Pure canvas, no library; it idles
+// when the hero is off screen or the tab is hidden, and stands still if you
+// asked for reduced motion.
+(function () {
+  var canvas = document.getElementById('swarm');
+  var hero = document.getElementById('top');
+  if (!canvas || typeof canvas.getContext !== 'function') return;
+  var ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var LINK = 150, W = 0, H = 0, nodes = [], packets = [], running = false, raf = 0, last = 0, lastPacket = 0;
+  var mouse = { x: 0, y: 0, on: false };
+
+  function spawn() {
+    var a = Math.random() * Math.PI * 2, s = 0.12 + Math.random() * 0.26;
+    return { x: Math.random() * W, y: Math.random() * H, vx: Math.cos(a) * s, vy: Math.sin(a) * s, r: 1.6 + Math.random() * 1.8 };
+  }
+  function resize() {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = canvas.clientWidth; H = canvas.clientHeight;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var want = Math.max(28, Math.min(90, Math.round(W * H / 16000)));
+    while (nodes.length < want) nodes.push(spawn());
+    nodes.length = want;
+  }
+  function step(k) {
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      n.x += n.vx * k; n.y += n.vy * k;
+      if (n.x < -12) n.x = W + 12; else if (n.x > W + 12) n.x = -12;
+      if (n.y < -12) n.y = H + 12; else if (n.y > H + 12) n.y = -12;
+    }
+    for (var p = packets.length - 1; p >= 0; p--) {
+      packets[p].t += k / 55;
+      if (packets[p].t >= 1) packets.splice(p, 1);
+    }
+  }
+  function sendPacket() {
+    if (packets.length > 10) return;
+    var a = nodes[Math.floor(Math.random() * nodes.length)], near = [];
+    for (var i = 0; i < nodes.length; i++) {
+      var b = nodes[i]; if (b === a) continue;
+      var dx = a.x - b.x, dy = a.y - b.y;
+      if (dx * dx + dy * dy < LINK * LINK) near.push(b);
+    }
+    if (near.length) packets.push({ a: a, b: near[Math.floor(Math.random() * near.length)], t: 0 });
+  }
+  function link(a, b, rgb, boost) {
+    var dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
+    if (d2 > LINK * LINK) return;
+    var t = 1 - Math.sqrt(d2) / LINK;
+    ctx.strokeStyle = 'rgba(' + rgb + ',' + (0.05 + t * (0.3 + boost)).toFixed(3) + ')';
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  }
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.lineWidth = 1;
+    for (var i = 0; i < nodes.length; i++) {
+      for (var j = i + 1; j < nodes.length; j++) link(nodes[i], nodes[j], '47,211,189', 0);
+      if (mouse.on) link(mouse, nodes[i], '240,161,60', 0.4);
+    }
+    ctx.fillStyle = 'rgba(47,211,189,0.9)';
+    for (var n = 0; n < nodes.length; n++) {
+      ctx.beginPath(); ctx.arc(nodes[n].x, nodes[n].y, nodes[n].r, 0, Math.PI * 2); ctx.fill();
+    }
+    for (var p = 0; p < packets.length; p++) {
+      var q = packets[p], x = q.a.x + (q.b.x - q.a.x) * q.t, y = q.a.y + (q.b.y - q.a.y) * q.t;
+      ctx.fillStyle = 'rgba(240,161,60,' + (1 - Math.abs(q.t - 0.5) * 1.2).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(x, y, 2.6, 0, Math.PI * 2); ctx.fill();
+    }
+    if (mouse.on) {
+      ctx.fillStyle = 'rgba(240,161,60,0.95)';
+      ctx.beginPath(); ctx.arc(mouse.x, mouse.y, 4, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  function frame(now) {
+    if (!running) return;
+    var k = last ? Math.min(3, (now - last) / 16) : 1;
+    last = now;
+    if (now - lastPacket > 220) { sendPacket(); lastPacket = now; }
+    step(k); draw();
+    raf = window.requestAnimationFrame(frame);
+  }
+  function start() { if (running || reduce) return; running = true; last = 0; raf = window.requestAnimationFrame(frame); }
+  function stop() { running = false; if (raf) window.cancelAnimationFrame(raf); raf = 0; }
+
+  resize();
+  window.addEventListener('resize', function () { resize(); if (!running) draw(); });
+  if (reduce) { for (var i = 0; i < 300; i++) step(1); draw(); return; }
+  hero.addEventListener('pointermove', function (e) {
+    if (e.pointerType && e.pointerType !== 'mouse') return;
+    var r = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top; mouse.on = true;
+  });
+  hero.addEventListener('pointerleave', function () { mouse.on = false; });
+  var onScreen = true;
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (entries) {
+      onScreen = entries[0].isIntersecting;
+      if (onScreen && !document.hidden) start(); else stop();
+    }, { threshold: 0.02 }).observe(hero);
+  }
+  document.addEventListener('visibilitychange', function () { if (document.hidden) stop(); else if (onScreen) start(); });
+  start();
+})();
+
+// Live numbers from the project's tracker. It is the one thing this page
+// fetches; if it is unreachable the line simply stays hidden.
+(function () {
+  var el = document.getElementById('live'), txt = document.getElementById('live-text');
+  if (!el || !txt || typeof window.fetch !== 'function') return;
+  var url = 'https://bot.martintech.co.uk/stats.json';
+  function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+  function show(s) {
+    var peers = s.peersAll | 0, swarms = s.activeTorrents | 0;
+    txt.textContent = peers
+      ? plural(peers, 'browser') + ' connected in ' + plural(swarms, 'swarm') + ' right now'
+      : 'tracker up, no browsers connected right now: be the first';
+    el.hidden = false;
+  }
+  function tick() {
+    fetch(url, { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error(r.status)); })
+      .then(show)
+      .catch(function () { el.hidden = true; });
+  }
+  tick();
+  setInterval(tick, 30000);
+})();
+</script>
+<script type="module">
+// The ten cats, drawn by Catwalk's own avatar module from the same tree.
+import { catSvg } from './catwalk/src/avatar.js';
+const cats = [
+  ['Mittens', 'calico', 'green'], ['Whiskers', 'tabby', 'amber'], ['Tom', 'grey', 'copper'],
+  ['Luna', 'black', 'green'], ['Oliver', 'ginger', 'amber'], ['Cleo', 'siamese', 'blue'],
+  ['Simba', 'ginger', 'green'], ['Nala', 'white', 'odd'], ['Felix', 'tuxedo', 'green'], ['Pixel', 'grey', 'blue'],
+];
+const row = document.getElementById('cats');
+if (row) row.innerHTML = cats.map(([name, fur, eyes]) =>
+  `<span class="cat" title="${name}">${catSvg({ fur, eyes, seed: name.toLowerCase() }, 40)}</span>`).join('');
+</script>
+</body>
+</html>

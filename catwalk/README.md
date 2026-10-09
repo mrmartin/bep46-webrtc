@@ -1,6 +1,6 @@
 # Catwalk — a 2004 social network with no server
 
-**Live:** <https://bot.martintech.co.uk/catwalk> · demo accounts `mittens`, `whiskers`, `tom`, `luna`, `oliver`, `cleo`, `simba`, `nala`, `felix`, `pixel`, password `catnip2004`
+**Live:** <https://mrmartin.net/bep46-webrtc/catwalk/> (GitHub Pages; also <https://bot.martintech.co.uk/catwalk/>) · demo accounts `mittens`, `whiskers`, `tom`, `luna`, `oliver`, `cleo`, `simba`, `nala`, `felix`, `pixel`, password `catnip2004`
 
 A parody of a certain early social network, rebuilt on the [accounts layer](../accounts/) one directory up: register, make a profile with a little SVG cat, find other cats, send and confirm friend requests, poke, and post — to everyone, or to your friends only. There is no server behind any of it. Every account, friendship and post is a signed record that lives in whoever has the page open; browsers find each other through a WebTorrent tracker and talk over WebRTC. Friends-only posts are encrypted, so a peer that relays them cannot read them.
 

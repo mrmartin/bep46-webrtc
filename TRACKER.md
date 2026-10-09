@@ -8,9 +8,11 @@ ones are unreliable, so this project runs its own:
 |---|---|
 | announce (browsers) | `wss://bot.martintech.co.uk` |
 | announce (Node / curl) | `https://bot.martintech.co.uk/announce` |
-| status | <https://bot.martintech.co.uk/> |
+| status | <https://bot.martintech.co.uk/status> (plain text) |
+| the project site | <https://bot.martintech.co.uk/> — the same files GitHub Pages serves (see the README, *The website*) |
 | stats | <https://bot.martintech.co.uk/stats> (and `/stats.json`) |
 | the app, served by the tracker | <https://bot.martintech.co.uk/bep46-webrtc.html> |
+| the example apps, built | <https://bot.martintech.co.uk/catwalk/> and <https://bot.martintech.co.uk/accounts/> (the single-file `dist/` builds) |
 
 It is the first entry of `TRACKERS` in `bep46-webrtc.html` and of
 `DEFAULT_TRACKERS` in `accounts/src/transport-webtorrent.js`; the two public
@@ -25,13 +27,16 @@ through it.
 Nothing bespoke. It is the stock
 [`bittorrent-tracker`](https://github.com/webtorrent/bittorrent-tracker)
 package (the same one `accounts/tools/tracker.js` and the test-suite use), with
-a 60-line launcher in [`tracker/tracker.js`](tracker/tracker.js) that:
+a short launcher in [`tracker/tracker.js`](tracker/tracker.js) that:
 
 - enables the WebSocket and HTTP announce endpoints, disables UDP,
 - sets `trustProxy` so the real client IP is taken from `X-Forwarded-For`,
-- serves a plain-text status page on `/` and this checkout's
-  `bep46-webrtc.html`, leaving `/announce`, `/scrape` and `/stats` to the
-  library.
+- serves this checkout as a static site on `/` — the same files GitHub Pages
+  serves: the landing page, `bep46-webrtc.html`, the apps' `web/`, `src/` and
+  `vendor/` trees; no dotfiles, no `node_modules` — with the built single-file
+  apps on `/catwalk/` and `/accounts/`, a plain-text status on `/status`, and
+  a CORS header on `/stats.json` so the site can show live peer counts;
+  `/announce`, `/scrape` and `/stats` are left to the library.
 
 ## Run it yourself
 
@@ -61,7 +66,7 @@ location / {
 ```
 
 Without the two `Upgrade`/`Connection` lines nginx forwards the handshake as
-an ordinary GET, the tracker answers with its status page, and the browser
+an ordinary GET, the tracker answers with the site's landing page, and the browser
 reports `Unexpected server response: 200`.
 
 ## Testing it
@@ -87,6 +92,7 @@ in the other, and watch the peer count go to 1.
 is `supervisord`'s `app` program there (`/app/run-app.sh` → this checkout's
 `tracker/tracker.js` on port 3000); the host's nginx terminates TLS and
 proxies to the container. `git pull` in `/app/bep46-webrtc` and
-`supervisorctl restart app` redeploys it. The tracker also serves the Catwalk
-example app at `/catwalk` from `catwalk/dist/index.html`, so after pulling a
-Catwalk change run `npm install && npm run build` in `catwalk/` as well.
+`supervisorctl restart app` redeploys it. The tracker also serves the built
+apps, `/catwalk/` from `catwalk/dist/index.html` and `/accounts/` from
+`accounts/dist/index.html`, so after pulling a change to either run
+`npm install && npm run build` there as well.
