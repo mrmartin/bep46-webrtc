@@ -328,6 +328,7 @@ configureBrowser();                        <span class="c">// nacl + scrypt, fro
           <li><a href="https://github.com/mrmartin/bep46-webrtc/tree/main/catwalk#readme">catwalk/</a><span>The social records, friends-only encryption with epochs and a key chain, and how the sample network is generated.</span></li>
           <li><a href="https://github.com/mrmartin/bep46-webrtc/blob/main/TRACKER.md">TRACKER.md</a><span>Run your own tracker: the stock bittorrent-tracker package behind nginx, with the exact config and a protocol test.</span></li>
           <li><a href="https://github.com/mrmartin/bep46-webrtc/tree/main/accounts#tests">Tests</a><span><code>npm test</code> in <code>accounts/</code> and <code>catwalk/</code>; the swarm and browser suites drive a real tracker and two Chromium browsers over WebRTC.</span></li>
+          <li><a href="notes/friends-only-database.html">Design note: a database you share only with your friends</a><span>Where the password in a serverless user database is weak, why a pepper turns into a device secret, and what replicating only among friends fixes, for security and for the next billion users.</span></li>
         </ul>
         <div class="fork">
           <h3>Your own copy, three steps</h3>
@@ -349,7 +350,7 @@ configureBrowser();                        <span class="c">// nacl + scrypt, fro
     <p class="sub">A network with no server has no one to lie for it. These are the limits, straight from the <a href="https://github.com/mrmartin/bep46-webrtc/tree/main/accounts#what-this-does-not-protect-against--read-before-relying-on-it">README</a>.</p>
     <div class="fine">
       <div><h3>Durability is social</h3><p>A page or a record exists for as long as someone who has it comes back online, and browsers evict storage. If you need more, keep one always-on headless replica: it is a mirror, not an authority, and cannot forge or roll anything back.</p></div>
-      <div><h3>Passwords can be guessed offline</h3><p>A sealed key is public by construction. scrypt at 2<sup>15</sup> makes every guess cost 32 MiB of memory, which turns a short password into a lost account, not a safe one. There is no reset, because nobody holds anything that could reset it.</p></div>
+      <div><h3>Passwords can be guessed offline</h3><p>A sealed key is public by construction. scrypt at 2<sup>15</sup> makes every guess cost 32 MiB of memory, which turns a short password into a lost account, not a safe one. There is no reset, because nobody holds anything that could reset it. Where this goes next: <a href="notes/friends-only-database.html">a database you share only with your friends</a>.</p></div>
       <div><h3>Trackers are the fixed point</h3><p>Browsers cannot find each other on their own; a WebSocket tracker introduces them. The project runs its own and every app lets you enter yours. The tracker sees an infohash and a WebRTC offer, never content.</p></div>
       <div><h3>Not mainline BitTorrent</h3><p>It keeps the semantics of BEP 46, not the wire format of the DHT, so it does not interoperate with mainline clients. It is a network among the browsers running these pages.</p></div>
     </div>

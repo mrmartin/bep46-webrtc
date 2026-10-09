@@ -237,6 +237,7 @@ page, and everything it links to is a plain file in this tree:
 | `/bep46-webrtc.html` | the page publisher |
 | `/catwalk/` | Catwalk — [`catwalk/index.html`](catwalk/index.html) forwards to [`catwalk/web/`](catwalk/web/) |
 | `/accounts/` | the Swarm Registry — [`accounts/index.html`](accounts/index.html) forwards to [`accounts/web/`](accounts/web/) |
+| `/notes/friends-only-database.html` | a design note: [a database you share only with your friends](notes/friends-only-database.html) — passwords without a server, and replicating only among friends |
 
 There is no build step and no CI: the apps load their ES modules and the
 vendored libraries straight from the checkout (the same way `npm start` serves
