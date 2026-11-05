@@ -102,6 +102,7 @@ h1 { font-size: clamp(3.1rem, 9.5vw, 7.2rem); line-height: .95; letter-spacing: 
 .app-head { padding: 1rem 1.4rem; color: #fff; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .app-head.catwalk { background: var(--blue); font: bold 22px Verdana, Tahoma, Arial, sans-serif; letter-spacing: -1px; }
 .app-head.publisher { background: #0c0d10; color: var(--amber); font-family: var(--mono); font-weight: 600; }
+.app-head.call { background: #3a2c14; color: #f0a13c; font-family: var(--mono); font-weight: 600; }
 .app-head.registry { background: #1e7f74; font-family: Charter, "Iowan Old Style", "Palatino Linotype", Georgia, serif; font-size: 1.35rem; font-weight: 500; }
 .badge { font: 600 .72rem/1 var(--sans); letter-spacing: .08em; text-transform: uppercase; padding: .4rem .6rem; border-radius: 999px; background: rgba(255, 255, 255, .16); color: #fff; white-space: nowrap; }
 .app-body { padding: 1.4rem; display: flex; flex-direction: column; gap: 1rem; flex: 1; }
@@ -199,6 +200,7 @@ footer { border-top: 1px solid var(--rule); padding: 2rem 0 3rem; color: var(--i
       <a class="btn btn-primary" href="catwalk/">Open Catwalk
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
       <a class="btn btn-ghost" href="bep46-webrtc.html">Publish a page</a>
+      <a class="btn btn-ghost" href="call.html">Start a video call</a>
     </div>
     <p class="hint">Nothing to install. Works in any modern browser.</p>
     <p class="live" id="live" hidden><span class="pulse" aria-hidden="true"></span><span id="live-text"></span></p>
@@ -238,7 +240,7 @@ footer { border-top: 1px solid var(--rule); padding: 2rem 0 3rem; color: var(--i
 
 <section class="block alt" id="apps">
   <div class="wrap">
-    <h2>Three things with no server behind them</h2>
+    <h2>Four things with no server behind them</h2>
     <p class="sub">Open any of them in two browsers, or on two devices, and watch them find each other.</p>
     <div class="apps">
       <article class="app">
@@ -261,6 +263,15 @@ footer { border-top: 1px solid var(--rule); padding: 2rem 0 3rem; color: var(--i
           </div>
           <p class="meta">Two strings and no account: the address is the public key, the secret key is the only thing that can publish to it.</p>
           <a class="btn btn-dark" href="bep46-webrtc.html">Open the publisher</a>
+        </div>
+      </article>
+      <article class="app">
+        <div class="app-head call"><span>call.html</span><span class="badge">video calls</span></div>
+        <div class="app-body">
+          <p>A video call that is just a link. Press one button, share the link, and whoever opens it is in the call; the same link works next week. Video goes browser to browser, everyone who watches helps carry the stream, and you hear at most the three people who spoke last.</p>
+          <img class="shot" src="docs/call.png" width="1360" height="820" loading="lazy" alt="A call between three browsers: the active speaker on the stage, the others as thumbnails, the link to share at the top">
+          <p class="meta">Two video qualities per person, relays that form on their own, a periodic handshake instead of signed frames. Chrome or Edge.</p>
+          <a class="btn btn-dark" href="call.html">Start a call</a>
         </div>
       </article>
       <article class="app">

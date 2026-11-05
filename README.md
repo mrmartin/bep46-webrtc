@@ -73,7 +73,7 @@ WebRTC and rendered in a sandboxed iframe. The key holder can re-point the
 address at new bytes at any time; everyone watching the address picks up the
 new version on the next gossip round.
 
-## Calls: a serverless replacement for Zoom / Meet
+### Calls — a video call that is just a link
 
 [`call.html`](call.html) + [`bep46-stream.js`](bep46-stream.js) turn the same
 swarm into a video call. Open the page: you see your camera, your microphone
@@ -82,6 +82,10 @@ link is in the call. The link is the room: use it every Tuesday, leave it
 empty all week, it still works, because nothing about it is stored anywhere.
 Everything works by default; options (name, relay budget, who you watch,
 trackers, TURN) are available once the call is running.
+
+[**Live: mrmartin.net/bep46-webrtc/call.html**](https://mrmartin.net/bep46-webrtc/call.html)
+
+![A call between three browsers: the active speaker on the stage, the others as thumbnails, the link to share at the top](docs/call.png)
 
 What is different from a hosted service:
 
@@ -102,7 +106,7 @@ What is different from a hosted service:
   active others in low quality, and the people panel lets you watch, listen
   to or pin anyone. Streams nobody asked for are never sent at all.
 
-### How the streaming works
+#### How the streaming works
 
 Segmented live streaming (HLS and friends) is seconds late by construction,
 so the data plane here is shaped like real-time media and like the Media over
@@ -133,7 +137,7 @@ latency): capture-to-canvas 15–150 ms, audio decoded at 50 frames per second
 per speaker, a viewer served through a relay at depth 2, recovery within a
 few seconds when the relay leaves.
 
-### Authentication
+#### Authentication
 
 The link carries a 128-bit secret. The tracker sees `sha1` of it. Every wire
 between two participants runs a handshake: proof of knowledge of the room key
@@ -145,18 +149,15 @@ they only ever travel between peers that proved membership. Media is
 encrypted hop by hop (DTLS); relays are participants and see what they
 forward.
 
-### Running it
+#### Running it
 
 Serve `call.html` and `bep46-stream.js` from any static host over HTTPS
 (both files, same directory), or open `call.html` from disk. The default
-trackers are the public WebTorrent ones; for reliability run your own, e.g.
-
-```
-npx bittorrent-tracker --ws --port 8000 --trust-proxy
-```
-
-behind nginx or Caddy with TLS, WebSocket upgrade headers and an idle timeout
-above two minutes (browsers re-announce every 120 s). Put its `wss://` URL in
+tracker list is the project's own tracker with the public WebTorrent ones as
+fallbacks, the same list as the page publisher. To run your own, see
+[`TRACKER.md`](TRACKER.md): the stock `bittorrent-tracker` behind nginx or
+Caddy with TLS, WebSocket upgrade headers and an idle timeout above two
+minutes (browsers re-announce every 120 s). Put its `wss://` URL in
 `DEFAULT_TRACKERS` in `bep46-stream.js`, or in the Options panel; a call link
 created with a non-default tracker list carries that list, so invitees use
 the same tracker. The tracker only ever relays WebRTC offers; no media goes
@@ -171,7 +172,7 @@ Firefox uses the `requestVideoFrameCallback` capture path. A browser without
 WebCodecs can join and watch nothing until it has them; the landing page says
 so. Smoothness was prioritised over breadth, as asked.
 
-### Tests
+#### Tests
 
 ```
 npm install
@@ -188,7 +189,7 @@ first participant's relay budget so one viewer must be served through the
 other (depth 2), closes the relay and checks recovery, then has everyone
 leave and two new participants meet on the same link.
 
-### Limitations and what comes next
+#### Limitations and what comes next
 
 - Presence is gossiped room-wide every two seconds, which is fine for dozens
   of participants. Thousands need sharded sub-swarms and aggregated
@@ -369,6 +370,7 @@ page, and everything it links to is a plain file in this tree:
 | `/` | the landing page, [`index.html`](index.html) |
 | `/bep46-webrtc.html` | the page publisher |
 | `/catwalk/` | Catwalk — [`catwalk/index.html`](catwalk/index.html) forwards to [`catwalk/web/`](catwalk/web/) |
+| `/call.html` | video calls — [`call.html`](call.html) with [`bep46-stream.js`](bep46-stream.js) |
 | `/accounts/` | the Swarm Registry — [`accounts/index.html`](accounts/index.html) forwards to [`accounts/web/`](accounts/web/) |
 | `/notes/friends-only-database.html` | a design note: [a database you share only with your friends](notes/friends-only-database.html) — passwords without a server, and replicating only among friends |
 

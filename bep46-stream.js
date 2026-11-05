@@ -290,7 +290,11 @@ class SpeakerSelector {
    Finds peers through the tracker (via WebTorrent on a content-less info
    hash), authenticates every wire with the handshake above and floods signed
    gossip (presence, link signaling) with de-duplication.                  */
-const DEFAULT_TRACKERS = ['wss://tracker.openwebtorrent.com', 'wss://tracker.webtorrent.dev'];
+const DEFAULT_TRACKERS = [
+  'wss://bot.martintech.co.uk',          // this project's own tracker (see TRACKER.md)
+  'wss://tracker.openwebtorrent.com',    // public fallbacks, often down
+  'wss://tracker.webtorrent.dev'
+];
 const EXT = 'bep46call';
 
 class Room extends Emitter {
