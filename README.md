@@ -15,6 +15,135 @@ WebRTC and rendered in a sandboxed iframe. The key holder can re-point the
 address at new bytes at any time; everyone watching the address picks up the
 new version on the next gossip round.
 
+## Calls: a serverless replacement for Zoom / Meet
+
+[`call.html`](call.html) + [`bep46-stream.js`](bep46-stream.js) turn the same
+swarm into a video call. Open the page: you see your camera, your microphone
+level, and one button. **Start a call** gives you a link; whoever opens the
+link is in the call. The link is the room: use it every Tuesday, leave it
+empty all week, it still works, because nothing about it is stored anywhere.
+Everything works by default; options (name, relay budget, who you watch,
+trackers, TURN) are available once the call is running.
+
+What is different from a hosted service:
+
+- **No media server.** Video and audio go browser to browser. There is still
+  a WebSocket tracker so browsers can find each other, and public STUN so
+  they can learn their own addresses; both see only an opaque hash, never
+  the call.
+- **Everyone who watches also carries.** Each participant publishes two video
+  renditions (full, about 720p, and a 320×180 thumbnail) and Opus audio.
+  Viewers subscribe to what they look at. When a publisher's upload budget is
+  spent, the next viewer is served by an existing viewer, which forwards the
+  encoded frames without re-encoding. Trees of relays form and repair
+  themselves as people come and go.
+- **At most three voices.** Nobody wants to hear more than three people at
+  once, so each participant hears the three most recent speakers (with
+  hysteresis), plus anyone they force on, minus anyone they force off. The
+  stage shows the active speaker in full quality, thumbnails show the most
+  active others in low quality, and the people panel lets you watch, listen
+  to or pin anyone. Streams nobody asked for are never sent at all.
+
+### How the streaming works
+
+Segmented live streaming (HLS and friends) is seconds late by construction,
+so the data plane here is shaped like real-time media and like the Media over
+QUIC design: tracks of groups of objects.
+
+| Piece | What it is here |
+|---|---|
+| track | one rendition of one publisher: `vh`, `vl` or `a` |
+| object | one encoded frame from WebCodecs, in ≤16 KB chunks with a 20-byte header |
+| group | the frames from one keyframe to the next (keyframe every 2 s) |
+| transport | a dedicated `RTCPeerConnection` per pair of peers with three data channels: `ctl` (reliable), `vid` and `aud` (unordered, give up retransmitting after 400 / 150 ms) |
+| relay | any subscriber: chunks are forwarded as they arrive, the current group is cached so a new child starts decoding immediately |
+| control plane | the existing swarm: tracker rendezvous, signed gossip for presence and link signaling |
+
+A subscriber asks the publisher for a track over the link's control channel.
+The publisher serves it if it has upload budget (3 Mbps by default,
+configurable, 0 = watch only), otherwise it answers with the peers it is
+already serving and the subscriber asks one of them. If the publisher cannot
+be reached directly (NAT), the subscriber asks over the swarm for relays.
+A relay that is itself congested drops delta frames for the slow child until
+the next keyframe; a publisher whose first-hop children back up lowers its
+encoder bitrate and recovers slowly. Lost audio frames are concealed with
+silence of the same duration so lip sync is kept; the playback jitter buffer
+starts at 100 ms and adapts to the network.
+
+Measured in the test harness (three browsers on one machine, so no network
+latency): capture-to-canvas 15–150 ms, audio decoded at 50 frames per second
+per speaker, a viewer served through a relay at depth 2, recovery within a
+few seconds when the relay leaves.
+
+### Authentication
+
+The link carries a 128-bit secret. The tracker sees `sha1` of it. Every wire
+between two participants runs a handshake: proof of knowledge of the room key
+(derived from the secret) plus an ed25519 signature over the transcript, and
+the handshake is repeated every five minutes with fresh nonces. Presence and
+link signaling are signed by the sender's key, so the DTLS fingerprints of
+the media connections are bound to identities. Media frames are not signed;
+they only ever travel between peers that proved membership. Media is
+encrypted hop by hop (DTLS); relays are participants and see what they
+forward.
+
+### Running it
+
+Serve `call.html` and `bep46-stream.js` from any static host over HTTPS
+(both files, same directory), or open `call.html` from disk. The default
+trackers are the public WebTorrent ones; for reliability run your own, e.g.
+
+```
+npx bittorrent-tracker --ws --port 8000 --trust-proxy
+```
+
+behind nginx or Caddy with TLS, WebSocket upgrade headers and an idle timeout
+above two minutes (browsers re-announce every 120 s). Put its `wss://` URL in
+`DEFAULT_TRACKERS` in `bep46-stream.js`, or in the Options panel; a call link
+created with a non-default tracker list carries that list, so invitees use
+the same tracker. The tracker only ever relays WebRTC offers; no media goes
+through it. Without a TURN server, pairs of participants behind symmetric
+NATs cannot link directly; the swarm routes around that for viewers (a relay
+serves them) but a TURN server can be added in Options as an ICE server JSON
+array (Cloudflare and Metered offer free tiers).
+
+Browser support: Chrome, Edge and other Chromium browsers are the target;
+they have WebCodecs, `MediaStreamTrackProcessor` and Opus in `AudioEncoder`.
+Firefox uses the `requestVideoFrameCallback` capture path. A browser without
+WebCodecs can join and watch nothing until it has them; the landing page says
+so. Smoothness was prioritised over breadth, as asked.
+
+### Tests
+
+```
+npm install
+npm run test:unit        # framing, reassembly, group cache, speaker selection, envelopes, handshake
+npm i -D playwright && npx playwright install chromium
+npm run test:e2e         # three real headless browsers, a local tracker, the real page
+npm run serve            # local tracker + static server for manual testing
+```
+
+The end-to-end test joins three participants on one link with fake cameras
+and microphones, checks that everyone sees and hears everyone, keeps the call
+running for ten seconds and measures frame and audio rates, throttles the
+first participant's relay budget so one viewer must be served through the
+other (depth 2), closes the relay and checks recovery, then has everyone
+leave and two new participants meet on the same link.
+
+### Limitations and what comes next
+
+- Presence is gossiped room-wide every two seconds, which is fine for dozens
+  of participants. Thousands need sharded sub-swarms and aggregated
+  thumbnails; the stream layer does not change for that.
+- No TURN by default. A publisher behind a symmetric NAT needs at least one
+  reachable first-hop viewer.
+- Relays see the media they forward. End-to-end encryption with a room key
+  would cost one `secretbox` per frame and is a small addition.
+- Safari's `AudioEncoder` support should be verified before relying on it;
+  the fallback there would be native WebRTC audio on the same link.
+- Recording a call to torrents (every minute of groups becomes a seedable
+  archive) is the natural next step and reuses the page-hosting code.
+
 ## What you can do from the homepage
 
 The home screen has three options:
@@ -145,6 +274,10 @@ cost a signature verification and nothing else.
 [WebTorrent](https://webtorrent.io) (WebRTC transport) and
 [TweetNaCl](https://tweetnacl.js.org) (ed25519). Both from a CDN. No build,
 no bundler, no backend.
+
+`call.html` additionally relies on WebCodecs (`VideoEncoder`/`VideoDecoder`,
+`AudioEncoder`/`AudioDecoder`), `AudioWorklet` and unordered WebRTC data channels,
+all built into Chromium-based browsers; `bep46-stream.js` has no further dependencies.
 
 ## Known limitations
 

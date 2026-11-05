@@ -1,0 +1,17 @@
+{
+  "name": "bep46-webrtc",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Serverless web pages, live streams and video calls over WebTorrent/WebRTC swarms with BEP-46 style signed records.",
+  "scripts": {
+    "test": "node --test test/unit.test.js && node test/e2e.js",
+    "test:unit": "node --test test/unit.test.js",
+    "test:e2e": "node test/e2e.js",
+    "serve": "node test/serve.js"
+  },
+  "devDependencies": {
+    "bittorrent-tracker": "9.19.0",
+    "tweetnacl": "1.0.3",
+    "webtorrent": "1.9.7"
+  }
+}
