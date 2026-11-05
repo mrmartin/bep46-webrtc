@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Swarm Registry</title>
+<!-- GitHub Pages serves this repository as it is, so /accounts/ lands here; the
+     app is in web/. Query string and hash are carried along (?tracker=...).
+     The project's tracker host serves the built single-file app
+     (dist/index.html, from `npm run build`) at this same path instead. -->
+<meta name="robots" content="noindex">
+<script>location.replace('web/' + location.search + location.hash);</script>
+<noscript><meta http-equiv="refresh" content="0; url=web/"></noscript>
+</head>
+<body><p>Opening <a href="web/">Swarm Registry</a>…</p></body>
+</html>

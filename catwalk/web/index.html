@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catwalk</title>
+<meta name="description" content="Catwalk: a 2004-style social network for cats with no server. Accounts, friends and posts live in whoever has the page open.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%233b5998'/%3E%3Cpath d='M8 24 L7 9 L15 14z M24 24 L25 9 L17 14z' fill='%23fff'/%3E%3Cellipse cx='16' cy='20' rx='10' ry='8' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css">
+<script src="../../accounts/vendor/nacl-fast.min.js"></script>
+<script src="../../accounts/vendor/scrypt.js"></script>
+<script src="seed.js"></script>
+</head>
+<body>
+<div id="header">
+  <div class="wrap">
+    <a class="logo" href="#/">[catwalk]</a>
+    <form id="search" class="search" role="search"><input id="q" placeholder="search cats" aria-label="search cats"></form>
+    <nav id="topnav" aria-label="main"></nav>
+  </div>
+</div>
+<div class="wrap page">
+  <div id="left">
+    <div class="box">
+      <div class="body" id="leftnav"></div>
+    </div>
+    <div class="box">
+      <h3>the swarm</h3>
+      <div class="body" id="swarm"><span class="dot" id="swarm-dot"></span><span id="swarm-text">Starting…</span>
+        <div><a href="#" id="settings-toggle">trackers</a></div>
+        <form id="settings" hidden>
+          <textarea id="trackers" rows="3" spellcheck="false" aria-label="tracker addresses, one per line"></textarea>
+          <button type="submit">reconnect</button>
+        </form>
+      </div>
+    </div>
+    <div class="box">
+      <h3>what is this?</h3>
+      <div class="body small">A social network with <b>no server</b>. Every cat, friendship and post is a signed record held by whoever has this page open, passed between browsers over WebRTC. Friends-only posts are encrypted to your friends. <a href="https://github.com/mrmartin/bep46-webrtc/tree/main/catwalk">How it works</a>.</div>
+    </div>
+  </div>
+  <main id="content"></main>
+</div>
+<div id="footer" class="wrap">a <a href="https://github.com/mrmartin/bep46-webrtc">bep46-webrtc</a> example app · catwalk is a parody of a certain 2004 website · no cats were harmed, several were poked</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

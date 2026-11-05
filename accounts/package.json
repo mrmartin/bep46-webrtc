@@ -1,0 +1,26 @@
+{
+  "name": "p2p-accounts",
+  "version": "0.1.0",
+  "description": "User accounts (register / login / change password / delete) on a serverless peer-to-peer web: signed records replicated over WebTorrent channel swarms.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test \"test/unit/*.test.js\"",
+    "test:swarm": "node --test \"test/swarm/*.test.js\"",
+    "test:browser": "node --test \"test/browser/*.test.js\"",
+    "test:all": "node --test \"test/unit/*.test.js\" \"test/swarm/*.test.js\" \"test/browser/*.test.js\"",
+    "start": "node tools/serve.js",
+    "tracker": "node tools/tracker.js",
+    "build": "node tools/build.js"
+  },
+  "dependencies": {
+    "scrypt-js": "^3.0.1",
+    "tweetnacl": "^1.0.3",
+    "webtorrent": "^3.0.21"
+  },
+  "devDependencies": {
+    "bittorrent-tracker": "^11.1.0",
+    "esbuild": "^0.24.0",
+    "playwright": "^1.47.0"
+  }
+}

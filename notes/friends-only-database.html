@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A database you share only with your friends — bep46-webrtc</title>
+<meta name="description" content="Why the password in a serverless user database is its weakest point, why the usual server-side fixes do not carry over, and the design that fixes it along with the next billion users.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#0b1220">
+<link rel="canonical" href="https://mrmartin.net/bep46-webrtc/notes/friends-only-database.html">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://mrmartin.net/bep46-webrtc/notes/friends-only-database.html">
+<meta property="og:title" content="A database you share only with your friends">
+<meta property="og:description" content="Where the passwords in a serverless social network are weak, and the design that fixes both that and the next billion users.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1220'/%3E%3Cpath d='M8 10L24 10L16 24Z' fill='none' stroke='%232fd3bd' stroke-width='2'/%3E%3Ccircle cx='8' cy='10' r='3.5' fill='%232fd3bd'/%3E%3Ccircle cx='24' cy='10' r='3.5' fill='%232fd3bd'/%3E%3Ccircle cx='16' cy='24' r='3.5' fill='%23f0a13c'/%3E%3C/svg%3E">
+<!--
+  A design note on the project site. Like the landing page one directory up,
+  this is a plain file served by GitHub Pages straight from the repository:
+  no build step, no script, no external request.
+-->
+<style>
+:root {
+  --bg: #fbfaf6; --surface: #ffffff; --surface-2: #f1efe8; --ink: #14171c; --ink-2: #4f5661; --rule: #dcd9cf;
+  --navy: #0b1220; --navy-2: #0f172a; --navy-rule: #1f2a40; --on-navy: #eef2f7; --on-navy-2: #9aa7bb;
+  --teal: #2fd3bd; --teal-ink: #0f6e62; --teal-soft: rgba(47, 211, 189, 0.16);
+  --amber: #f0a13c; --amber-hover: #ffb554; --amber-ink: #1a1206;
+  --focus: #2f6fed;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --wrap: 1120px; --gutter: 20px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1420; --surface: #141c2b; --surface-2: #182236; --ink: #e8ecf3; --ink-2: #a6b0c0; --rule: #26324a;
+    --teal-ink: #5fe3cf; --teal-soft: rgba(47, 211, 189, 0.14);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1420; --surface: #141c2b; --surface-2: #182236; --ink: #e8ecf3; --ink-2: #a6b0c0; --rule: #26324a;
+  --teal-ink: #5fe3cf; --teal-soft: rgba(47, 211, 189, 0.14);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+img, svg { max-width: 100%; }
+code, pre { font-family: var(--mono); }
+.wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 var(--gutter); width: 100%; }
+a:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.skip { position: absolute; left: -999px; top: 0; background: var(--amber); color: var(--amber-ink); padding: .6rem 1rem; z-index: 10; }
+.skip:focus { left: 1rem; top: 1rem; }
+
+/* Top band, the same brand and links as the landing page ------------------ */
+.top { background: var(--navy); color: var(--on-navy); }
+.nav { display: flex; align-items: center; justify-content: space-between; gap: 1rem 2rem; flex-wrap: wrap; padding-top: 1.3rem; padding-bottom: 1.3rem; }
+.brand { display: inline-flex; align-items: center; gap: .55rem; font-weight: 700; letter-spacing: -.01em; text-decoration: none; color: var(--on-navy); }
+.brand svg { width: 28px; height: 28px; flex: none; }
+.nav ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 1.4rem; flex-wrap: wrap; font-size: .95rem; }
+.nav a { color: var(--on-navy); text-decoration: none; opacity: .82; }
+.nav a:hover { opacity: 1; text-decoration: underline; text-underline-offset: 4px; }
+
+/* The article ------------------------------------------------------------ */
+.article { max-width: 70ch; margin: 0 auto; padding: 3.6rem var(--gutter) 4rem; }
+.kicker { font-family: var(--mono); font-size: .82rem; letter-spacing: .12em; text-transform: uppercase; color: var(--teal-ink); margin: 0 0 1.1rem; }
+h1 { font-size: clamp(2.2rem, 5.5vw, 3.5rem); letter-spacing: -.03em; line-height: 1.05; margin: 0 0 1.1rem; font-weight: 800; }
+.lede { font-size: 1.25rem; line-height: 1.45; color: var(--ink-2); margin: 0 0 2.4rem; }
+h2 { font-size: clamp(1.55rem, 3vw, 2rem); letter-spacing: -.02em; line-height: 1.15; margin: 3.2rem 0 .8rem; font-weight: 800; }
+h3 { font-size: 1.15rem; line-height: 1.3; margin: 2.1rem 0 .5rem; }
+p, li { font-size: 1.05rem; }
+p { margin: 0 0 1.1rem; }
+ul, ol { padding-left: 1.3rem; margin: 0 0 1.2rem; }
+li { margin: .4rem 0; }
+li p { margin: 0; }
+strong { font-weight: 700; }
+sup { font-size: .72em; line-height: 0; }
+code { font-size: .92em; background: var(--surface-2); padding: .08em .35em; border-radius: 4px; }
+.table-wrap { overflow-x: auto; margin: 1.1rem 0 1.6rem; }
+table { border-collapse: collapse; width: 100%; font-size: .97rem; }
+th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); font-weight: 600; }
+tr:last-child td { border-bottom: 2px solid var(--rule); }
+.aside { border-left: 3px solid var(--teal); padding: .15rem 0 .15rem 1rem; color: var(--ink-2); margin: 1.4rem 0 1.6rem; }
+.aside p { margin: 0; font-size: 1rem; }
+.prov { font-size: .92rem; color: var(--ink-2); margin-top: 3.2rem; padding-top: 1.2rem; border-top: 1px solid var(--rule); }
+.prov p { font-size: .92rem; margin: 0 0 .5rem; }
+
+footer { border-top: 1px solid var(--rule); padding: 2rem 0 3rem; color: var(--ink-2); font-size: .9rem; }
+.foot { display: flex; flex-wrap: wrap; gap: 1rem 2rem; justify-content: space-between; align-items: baseline; }
+.foot ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 1.4rem; flex-wrap: wrap; }
+.foot p { margin: 0; max-width: 60ch; }
+
+@media (max-width: 480px) {
+  .article { padding-top: 2.4rem; }
+  .nav ul { gap: 1rem; font-size: .9rem; }
+  p, li { font-size: 1rem; }
+}
+@media print {
+  .top, footer { display: none; }
+  .article { max-width: none; padding: 0; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the article</a>
+
+<header class="top">
+  <nav class="wrap nav" aria-label="Site">
+    <a class="brand" href="../" aria-label="bep46-webrtc, home">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 10L24 10L16 24Z" fill="none" stroke="#2fd3bd" stroke-width="2"/><circle cx="8" cy="10" r="3.5" fill="#2fd3bd"/><circle cx="24" cy="10" r="3.5" fill="#2fd3bd"/><circle cx="16" cy="24" r="3.5" fill="#f0a13c"/></svg>
+      bep46-webrtc
+    </a>
+    <ul>
+      <li><a href="../">Home</a></li>
+      <li><a href="../catwalk/">Catwalk</a></li>
+      <li><a href="../accounts/">Swarm Registry</a></li>
+      <li><a href="https://github.com/mrmartin/bep46-webrtc">GitHub</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main id="main">
+<article class="article">
+  <p class="kicker">Design note · 9 October 2026</p>
+  <h1>A database you share only with your friends</h1>
+  <p class="lede">Why the password in a serverless user database is its weakest point, why the usual server-side fixes do not carry over, and the design that fixes it along with the next billion users.</p>
+
+  <p><strong>Where this starts.</strong> <a href="../">bep46-webrtc</a> publishes web pages and runs small apps with no server: the people who have a page open are the computers serving it. They find each other through a WebTorrent tracker and talk over WebRTC. One of its example apps, the <a href="../accounts/">Swarm Registry</a>, is a user database with the same property. Every account is an Ed25519 keypair. The secret key is encrypted under the account's password and published inside a signed record that every peer replicates, which is what lets you sign in from any browser with nothing but a username and a password. <a href="../catwalk/">Catwalk</a>, a 2004-style social network for cats, is built on top of that. The <a href="https://github.com/mrmartin/bep46-webrtc/tree/main/accounts#readme">accounts README</a> says plainly that the sealed key can be attacked offline.</p>
+  <p>This note started from a fair question about that design. The key derivation runs scrypt at a cost of 2<sup>15</sup>, which sounds low, so could the passwords be 2<sup>256</sup> and elliptic instead? It ends somewhere larger.</p>
+
+  <h2 id="cost">What the 2<sup>15</sup> actually is</h2>
+  <p>The short version: the account key is already a 256-bit elliptic-curve key. The 2<sup>15</sup> is a different kind of number, it is the price of one password guess, and making that number bigger has a hard ceiling. What decides the security is the password's entropy. That can be pushed to 256 bits, but then it stops being something a human remembers.</p>
+  <p>Each account is an Ed25519 keypair, plus an X25519 key for Catwalk's friends-only posts, so the identity itself is "elliptic and 2<sup>256</sup>" today. The password never signs anything. It only unlocks a copy of that key: the key is encrypted with XSalsa20-Poly1305 under a 256-bit key that <a href="https://www.rfc-editor.org/rfc/rfc7914">scrypt</a> derives from the password and a random 16-byte salt, and that encrypted box is published in the signed record for everyone to replicate. The 2<sup>15</sup> is scrypt's cost parameter N. It says one guess must touch 32 MiB of memory and burn a measurable amount of time. It is a work factor, not a key length or a password space.</p>
+  <p>Because the box is public, there is nothing to rate-limit. Anyone can download it and guess as fast as their hardware allows. So the attacker's total cost is simply the number of guesses times the cost per guess. Here is the cost per guess, measured on the project's tracker host, which has slow cores, so a current laptop is several times faster, both native and in the same pure-JS library the browser runs:</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>N</th><th>memory per guess</th><th>native</th><th>pure JS (what a login costs)</th><th>guesses/s on 40 cores</th></tr></thead>
+    <tbody>
+      <tr><td>2<sup>15</sup> (now)</td><td>32 MiB</td><td>0.6 s</td><td>3.5 s</td><td>about 66</td></tr>
+      <tr><td>2<sup>17</sup></td><td>128 MiB</td><td>3.7 s</td><td>17 s</td><td>about 11</td></tr>
+      <tr><td>2<sup>20</sup> (the cap)</td><td>1 GiB</td><td>28 s</td><td>minutes</td><td>about 1</td></tr>
+    </tbody>
+  </table></div>
+  <p>Against that, what matters is how many guesses the password needs:</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>password</th><th>guesses</th><th>time at N = 2<sup>15</sup> on those 40 cores</th></tr></thead>
+    <tbody>
+      <tr><td>"catnip2004" style, a word plus a year</td><td>~2<sup>22</sup></td><td>hours</td></tr>
+      <tr><td>typical human 8-character password</td><td>~2<sup>30</sup></td><td>months (days with a rack of machines)</td></tr>
+      <tr><td>6 random diceware words</td><td>~2<sup>77</sup></td><td>about five thousand times the age of the universe</td></tr>
+      <tr><td>a 256-bit key</td><td>2<sup>256</sup></td><td>never</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Why raising N is not the lever</h3>
+  <p>Going from 2<sup>15</sup> to 2<sup>17</sup> makes every guess four times dearer, which is worth two bits of password. It also makes every login four times slower, and 2<sup>20</sup> means a gigabyte of RAM per sign-in, which phones cannot do. The attacker and the user pay the same per-guess price, so N is capped by the user's patience at maybe two or three bits of gain. Password entropy has no cap: each extra word is 12 bits for free. Raising N modestly to 2<sup>16</sup> or 2<sup>17</sup> is still reasonable, and records carry their own parameters so old accounts keep working, but it is a tweak, not a fix.</p>
+  <div class="aside"><p>One consequence worth knowing: changing the password re-seals the same key under the new password. A peer that kept the old record can still crack the old weak password and get the current key. The only escape from a weak password is a new account.</p></div>
+
+  <h3>How to get to "2<sup>256</sup> and elliptic"</h3>
+  <p>The secret has to come from the device rather than from memory. Four routes, cheapest first:</p>
+  <ul>
+    <li><strong>Refuse weak passwords and generate strong ones.</strong> Keep username plus password, add an entropy estimate at registration with a floor around 60 bits, and a "generate a passphrase for me" button producing six diceware words for a password manager. No protocol change, and it takes most accounts from "days" to "never".</li>
+    <li><strong>Key login, no box at all.</strong> Let a user register with just a key, like the page publisher's <code>.key</code> file, shown as a 24-word mnemonic or a file. Nothing is published to attack. This needs a small record-format bump, since the validator currently requires a box on every live account. The user carries the key instead of remembering it.</li>
+    <li><strong>Passkeys with the PRF extension.</strong> The browser's authenticator (Touch ID, Windows Hello, a security key) derives a 256-bit secret per site and the account key is wrapped under that. Sign in with a fingerprint, nothing guessable in the swarm. It works on this site, but not inside the page publisher's sandboxed iframe, where there is no origin, and browser support is still uneven.</li>
+    <li><strong>Argon2id instead of pure-JS scrypt.</strong> A WebAssembly build is several times faster on the user's side, so you can afford more memory per guess at the same login time. Incremental, same category as raising N.</li>
+  </ul>
+  <p>What cannot be done serverless: a secret pepper, OPAQUE-style password exchange, or lockouts, since all of those need something the attacker does not have, held somewhere other than the user's device. The first route is cheap and worth doing regardless. The rest of this note is about where the others lead.</p>
+
+  <h2 id="pepper">The pepper, and why it turns into a device secret</h2>
+  <p>A natural suggestion at this point is the pepper that PHP applications use: a long random string kept in the application's config and prepended to every password before hashing, so that a user whose password is "password" is still safe, and never has to remember the long part. The intuition about what it buys is right. But it only works because of where the secret lives, and in a serverless system that forces a specific design.</p>
+  <p><strong>How the trick works.</strong> The app has a long random string in its config file. Before hashing, the password gets combined with it, for example <code>afoa8f7asdofgadf87_password</code> goes into bcrypt, or the password goes through HMAC with the pepper as the key. The user never knows the pepper. The point is separation: the hashes sit in the database, the pepper sits in a file on the web server. The common breach is a database dump through SQL injection or a stolen backup, and that dump is useless without the pepper, because now every guess has 256 unknown bits in it. If the attacker gets the whole server, config included, the pepper is gone and you are back to bcrypt and password strength.</p>
+  <p><strong>Why it does not transfer directly.</strong> The trick needs a place the attacker cannot read. Here the "database" is public by design, every peer holds it. So where would the pepper go?</p>
+  <ul>
+    <li>In the page's code: then everyone has it, including the attacker, and it adds nothing.</li>
+    <li>On a server: then the server has to hand it out to whoever logs in, so either it gives it to the attacker too, or it rate-limits and becomes the one thing that must be online for anyone to sign in. That is the design the whole project exists to avoid.</li>
+    <li>On the user's device: this is the only place that is private, and it is the version that works.</li>
+  </ul>
+  <p><strong>What it becomes here: a device secret.</strong> At registration the browser generates 256 random bits, stores them in the browser's storage, and seals the account key under scrypt of the device secret plus the password. The published box now needs both. Offline guessing against the swarm is dead regardless of password, because the guess space includes 256 unknown bits. The password still matters in one case only: someone who gets hold of the device secret, a stolen laptop or a leaked backup, has to guess the password to use it. So "password" as a password becomes "fine against the internet, weak against whoever has your device". That is a huge improvement over today, and it is an honest statement of what the trick gives.</p>
+  <p><strong>The costs are all about carrying it:</strong></p>
+  <ul>
+    <li>Signing in from a new browser needs the secret moved there once, as a QR code, a file, or 24 words. Password-only login from any browser, which is the registry's current headline, goes away for these accounts. The browser can hold it forever after that.</li>
+    <li>Lose every device that has it and the account is gone, same as losing a password, but a new way to lose. Registration has to insist on a backup copy.</li>
+    <li>A page published through the bep46 publisher runs in a sandboxed iframe with no persistent storage, so there the secret cannot be remembered and would have to be pasted each time. On this site and on the tracker host it works fine.</li>
+    <li>If the user keeps the secret in a password manager, that is identical to generating a strong password and keeping that in the manager. The pepper is just a strong password the user never types. The genuinely new capability is the browser remembering it.</li>
+  </ul>
+  <p>A practical shape would be an option per account: "portable", password only with a strength floor, or "device-locked", device secret plus any password with a mandatory backup step. The record format already carries the key-derivation parameters, so this is a flag in that block, and existing accounts keep working. The attacker's view of a device-locked account is the same as the key-login route above, 2<sup>256</sup>, so this is a way to get there while keeping a login form that feels like a login form.</p>
+
+  <h2 id="friends">A database you share only with your friends</h2>
+  <p>The question that reframes all of this: what if the database were only ever shared with your friends? That would also address a second problem that global replication has. At a billion users, nobody wants, and no browser could hold, a single database of absolutely everything.</p>
+  <p>This is the design the serious peer-to-peer social projects ended up with. <a href="https://scuttlebutt.nz/">Secure Scuttlebutt</a> arrived at it in 2014: every person has their own signed feed, and you replicate only the feeds of your friends, optionally friends of friends. <a href="https://briarproject.org/">Briar</a> does the same between contacts, and <a href="https://earthstar-project.org/">Earthstar</a> and the newer <a href="https://willowprotocol.org/">Willow</a> protocol are built around small shared spaces rather than one global set. So the instinct is well tested. Here is what it means for this codebase, what it fixes, what it does not, and where the hard parts are.</p>
+
+  <h3>What changes in the data model</h3>
+  <p>Today there are two global maps, the account directory and Catwalk's social ledger, and every open tab replicates all of both. In a friends-only design the unit of replication becomes the author. All of my records, my account record, profile, posts, friendships and pokes, form my feed, signed by my key, and you hold my feed only if we are friends. The nice thing is that this project already has the primitive: a feed is exactly a BEP-46 mutable page whose address is my public key. Catwalk becomes a browser that visits its friends' addresses and merges what it finds. The replica code barely changes, it gains a filter, "accept records whose owner is in my friend set", and the swarm per user already exists.</p>
+  <p>The real shift is that the database becomes subjective. There is no longer a single answer to "who is alice". There is the alice my friends know, and the name I choose to show for a key, a petname. <a href="https://en.wikipedia.org/wiki/Zooko%27s_triangle">Zooko's triangle</a> says names can be global, secure or human-friendly, pick two. The current registry picked global and human-friendly and lives with duplicate claimants. The friends design picks secure and human-friendly. If global search by name still matters, it can be an opt-in phone book, sharded by a hash prefix of the name so a lookup joins one small swarm instead of loading everything.</p>
+
+  <h3>What it does for the password problem</h3>
+  <p>Less than it looks, unless you take it one step further. Partitioning shrinks the audience for your sealed key from the whole internet to your friends and their friends. That is real: a stranger cannot even obtain the box to attack it. But the people who hold it are now exactly the ones who can socially engineer you, and in a 2004 Facebook parody, accepting a friend request would mean handing that person a copy of your sealed key. One compromised friend's browser is enough. So this is a reduction of exposure, not a cryptographic fix.</p>
+  <p>The step that makes it a fix: stop putting a crackable box in the swarm at all. Keep the key on your own devices, sealed under your password for local protection, and give your friends <a href="https://en.wikipedia.org/wiki/Shamir%27s_secret_sharing">Shamir shares</a> of it, say any three of five. No single friend holds anything attackable. Signing in from a new device, or after losing everything, means asking three friends, who confirm out of band that it is really you. That human decision is the rate limiter no server could provide, and it is what finally makes a weak password acceptable, because the weak password only guards a device the attacker would also need to steal. This is the <a href="https://vitalik.eth.limo/general/2021/01/11/recovery.html">social recovery</a> scheme that crypto wallets converged on, and a friends-only database is the natural home for it.</p>
+
+  <h3>What it does for scale</h3>
+  <p>This is where the idea is clearly right. Global replication of a billion accounts cannot fit in a browser at any record size. Friends-only replication scales with your neighbourhood instead:</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>what one person replicates</th><th>feeds</th><th>rough storage</th></tr></thead>
+    <tbody>
+      <tr><td>friends only, full feeds</td><td>~150</td><td>tens of MB</td></tr>
+      <tr><td>friends of friends, full feeds</td><td>~20,000</td><td>gigabytes, too much</td></tr>
+      <tr><td>friends in full, friends of friends as profile cards only</td><td>~20,000 cards</td><td>manageable</td></tr>
+    </tbody>
+  </table></div>
+  <p>Scuttlebutt learned the middle row the hard way and moved to partial replication, so the sensible dial is one hop in full and two hops as cards. The tracker stays the one global component, but it only does signalling and never sees content, and its load is a few kilobytes per connection regardless of how big the social graph gets. Partitioning also fixes the metadata leak the README lists today: strangers no longer see your friendships, posting times or ciphertexts, and nobody anywhere holds a copy of everything, which matters for privacy and for not being a honeypot.</p>
+
+  <h3>The hard parts, honestly</h3>
+  <ul>
+    <li><strong>Availability.</strong> Your feed is reachable only while you or a friend has a tab open. Native Scuttlebutt apps run all day. Browsers do not, and with ten friends the expected number online is often zero. Scuttlebutt's answer was pubs, always-on peers that follow you, which is a server again, though anyone can run one and it holds only what it is already allowed to see. An optional always-on peer, perhaps even a Node process on the tracker host that stores encrypted feeds, is probably unavoidable for a usable product.</li>
+    <li><strong>Discovery and first contact.</strong> With no global map, a stranger's friend request has nowhere to land, because I only replicate people I already chose. Invite links carrying a public key solve friend-making, and a per-user inbox swarm solves requests from strangers, at the price of a spam channel that needs a cost or an invite to post into.</li>
+    <li><strong>Unfriending cannot unsend.</strong> A removed friend keeps what they replicated. The per-author key epochs Catwalk already uses handle future posts, which is the best anyone can do.</li>
+    <li><strong>Hosting your friends.</strong> Each person stores and serves their friends' content, which is easier to accept than serving strangers, but it is still their content on your disk.</li>
+  </ul>
+
+  <h3>Open decisions</h3>
+  <p>Four decisions would shape a design:</p>
+  <ol>
+    <li>One hop or two, in full or as cards.</li>
+    <li>Whether global username search must survive, or invite links are enough.</li>
+    <li>Whether an optional always-on peer is acceptable, given the project's serverless promise.</li>
+    <li>Whether the account's key should leave the user's devices at all, or only as shares.</li>
+  </ol>
+  <p>Nothing in this note is implemented. The code it describes is in <a href="https://github.com/mrmartin/bep46-webrtc/tree/main/accounts">accounts/</a> and <a href="https://github.com/mrmartin/bep46-webrtc/tree/main/catwalk">catwalk/</a> in the repository, and the <a href="../">landing page</a> explains the project from the start. Comments, corrections and better ideas: <a href="https://github.com/mrmartin/bep46-webrtc/issues">open an issue</a>.</p>
+
+  <div class="prov">
+    <p>This note grew out of a design conversation between the project's author and Claude. The timings were measured on the project's tracker host on 9 October 2026 with the project's own code: Node's native scrypt and the vendored scrypt-js, at r = 8, p = 1.</p>
+  </div>
+</article>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <p>MIT licensed. This page is served by GitHub Pages straight from the repository, and it makes no network request of its own.</p>
+    <ul>
+      <li><a href="../">Home</a></li>
+      <li><a href="https://github.com/mrmartin/bep46-webrtc">GitHub</a></li>
+      <li><a href="https://bot.martintech.co.uk/status">Tracker status</a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

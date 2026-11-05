@@ -1,0 +1,14 @@
+{
+  "name": "bep46-tracker",
+  "private": true,
+  "type": "module",
+  "description": "WebSocket (WebRTC signalling) tracker for bep46-webrtc, hosted at wss://bot.martintech.co.uk",
+  "scripts": {
+    "start": "node tracker.js",
+    "test": "node test-ws.js"
+  },
+  "dependencies": {
+    "bittorrent-tracker": "^11.2.3",
+    "ws": "^8.18.0"
+  }
+}
